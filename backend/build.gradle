@@ -10,6 +10,8 @@ version = '0.0.1-SNAPSHOT'
 java {
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(21)
+		// Oracle JDK lacks the WISeKey root CA used by vector.sitg.ge.ch; Temurin ships it.
+		vendor = JvmVendorSpec.ADOPTIUM
 	}
 }
 
