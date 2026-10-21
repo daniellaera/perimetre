@@ -1,0 +1,9 @@
+.env
+.env.*
+*.log
+.idea/
+.DS_Store
+backend/build/
+backend/.gradle/
+app/build/
+app/.dart_tool/
