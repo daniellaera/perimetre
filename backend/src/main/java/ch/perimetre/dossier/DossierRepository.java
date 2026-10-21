@@ -36,7 +36,8 @@ public class DossierRepository {
 
     // geom::geography must stay written exactly like this to match the dossier_geog_gist expression index.
     private static final String WITHIN = """
-            SELECT id_dossier, type_dossier, type_operation, groupe, date_depot, date_maj_sitg, flags, lien_sad,
+            SELECT id_dossier, type_dossier, type_operation, operation, description,
+                   groupe, date_depot, date_maj_sitg, flags, lien_sad,
                    ST_Y(geom) AS lat, ST_X(geom) AS lng,
                    ST_Distance(geom::geography, p.center) AS distance_m
             FROM dossier,
@@ -92,6 +93,8 @@ public class DossierRepository {
                 rs.getString("id_dossier"),
                 rs.getString("type_dossier"),
                 rs.getString("type_operation"),
+                rs.getString("operation"),
+                rs.getString("description"),
                 Groupe.valueOf(rs.getString("groupe")),
                 rs.getObject("date_depot", LocalDate.class),
                 rs.getObject("date_maj_sitg", OffsetDateTime.class),

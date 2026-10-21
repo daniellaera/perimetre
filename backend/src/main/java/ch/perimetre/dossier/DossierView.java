@@ -12,6 +12,8 @@ public record DossierView(
         String idDossier,
         String typeDossier,
         String typeOperation,
+        String operation,
+        String description,
         Groupe groupe,
         LocalDate dateDepot,
         OffsetDateTime dateMajSitg,
