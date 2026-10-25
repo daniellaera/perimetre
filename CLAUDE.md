@@ -9,10 +9,23 @@ within that radius.
 
 ## Local environment
 
-- `docker compose up -d` starts PostGIS 17 (`perimetre-db`, perimetre/perimetre@localhost:5432,
-  db `perimetre`) and Redis 7 (`perimetre-redis`, localhost:6379).
-- `cd backend && ./gradlew bootRun`; health at `GET /actuator/health`.
+- `docker compose up -d` starts PostGIS 17 (`perimetre-db`, perimetre/perimetre@localhost:5433,
+  db `perimetre`) and Redis 7 (`perimetre-redis`, localhost:6380).
+- `cd backend && ./gradlew bootRun` (port 8090); health at `GET http://localhost:8090/actuator/health`.
 - Reset the DB: `docker compose down -v && docker compose up -d`.
+
+## Local ports
+
+Périmètre uses **8090** (backend), **5433** (PostGIS) and **6380** (Redis), because other local
+projects share this machine: online-shop (8080–8083, 8888) and DealJE.
+
+Standing rule: if a port is already in use when starting something, assume another local project
+of Daniel's is running. Do not kill or stop that process and do not ask him. If the busy port
+belongs to Périmètre, pick the next free port in the same range, use it for the current session
+only via an override (env var, `--server.port`, or a `docker-compose.override.yml` that stays
+untracked; it is in `.gitignore`), say which port you used, and do not change committed config.
+Docker containers from other projects (names not starting with `perimetre-`) are never to be
+touched.
 
 ## Backend conventions
 
@@ -126,9 +139,9 @@ lib/features/explore/widgets.dart  address field, radius slider, map, list sheet
 ```
 
 - **Run on the iOS simulator** against the local backend (start the DB and `./gradlew bootRun` first):
-  `cd app && flutter run -d "iPhone 17 Pro" --dart-define=API_BASE_URL=http://localhost:8080`
-  (the default base URL is `http://localhost:8080` already; the simulator reaches the Mac's localhost).
-  Android emulator: `--dart-define=API_BASE_URL=http://10.0.2.2:8080` (untested).
+  `cd app && flutter run -d "iPhone 17 Pro" --dart-define=API_BASE_URL=http://localhost:8090`
+  (the default base URL is `http://localhost:8090` already; the simulator reaches the Mac's localhost).
+  Android emulator: `--dart-define=API_BASE_URL=http://10.0.2.2:8090` (untested).
 - After changing a `@riverpod` provider: `dart run build_runner build`. Generated `*.g.dart` files are
   kept in the repo.
 - **Geocoding:** `SearchServer?searchText=…&type=locations&origins=address&sr=4326`. The API has no

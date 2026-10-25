@@ -7,3 +7,5 @@ backend/build/
 backend/.gradle/
 app/build/
 app/.dart_tool/
+# Per-session port overrides (see CLAUDE.md "Local ports")
+docker-compose.override.yml

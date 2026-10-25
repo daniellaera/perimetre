@@ -1,8 +1,11 @@
+server:
+  port: 8090
+
 spring:
   application:
     name: backend
   datasource:
-    url: jdbc:postgresql://localhost:5432/perimetre
+    url: jdbc:postgresql://localhost:5433/perimetre
     username: perimetre
     password: perimetre
   flyway:

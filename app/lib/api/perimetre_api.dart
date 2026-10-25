@@ -3,7 +3,7 @@ import 'package:dio/dio.dart';
 import 'models.dart';
 
 /// Backend base URL, set with `--dart-define=API_BASE_URL=...`.
-const apiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://localhost:8080');
+const apiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://localhost:8090');
 
 class PerimetreApi {
   PerimetreApi(this._dio);
