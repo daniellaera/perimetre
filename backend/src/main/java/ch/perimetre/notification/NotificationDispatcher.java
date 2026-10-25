@@ -67,7 +67,7 @@ public class NotificationDispatcher {
             PushResult result = send(token, push.message());
             switch (result.status()) {
                 case SENT -> {
-                    notifications.markSent(push.notificationIds());
+                    notifications.markSent(push.notificationIds(), result.messageId());
                     sent++;
                 }
                 case FAILED -> {

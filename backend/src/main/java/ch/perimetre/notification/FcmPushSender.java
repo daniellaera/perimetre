@@ -56,8 +56,7 @@ final class FcmPushSender implements PushSender {
                 .setApnsConfig(ApnsConfig.builder().setAps(Aps.builder().setSound("default").build()).build())
                 .build();
         try {
-            messaging.send(fcm);
-            return PushResult.sent();
+            return PushResult.sent(messaging.send(fcm));
         } catch (FirebaseMessagingException e) {
             String error = e.getMessagingErrorCode() + ": " + e.getMessage();
             return INVALID_TOKEN_CODES.contains(e.getMessagingErrorCode())

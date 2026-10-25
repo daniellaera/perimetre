@@ -98,7 +98,7 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
 - **Data facts (2026-10):** ~20.8k dossiers modified since 2025-01-01, ~1k/day. `date_maj_2` is
   date-only (midnight UTC) and lags about one day behind publication.
 
-## Data model (Flyway V1–V3)
+## Data model (Flyway V1–V4)
 
 - `dossier`: one row per SITG dossier (see "SITG import"); `dossier_geog_gist` on `(geom::geography)`.
 - `sync_state(source PK, last_run, bootstrapped)`: one row, `SIT_AUTOR_DOSSIER`.
@@ -109,7 +109,9 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
 - `event(id BIGSERIAL, id_dossier → dossier, kind NEW|GROUPE_CHANGE, old_groupe, new_groupe, occurred_at)`,
   indexed on `occurred_at` and `id_dossier`.
 - `notification(id, subscription_id → subscription ON DELETE CASCADE, event_id → event,
-  status PENDING|SENT|FAILED|SKIPPED, sent_at, error, UNIQUE(subscription_id, event_id))`.
+  status PENDING|SENT|FAILED|SKIPPED, sent_at, error, fcm_message_id, UNIQUE(subscription_id, event_id))`.
+  `fcm_message_id` (V4) is FCM's answer to a sent push (`projects/<id>/messages/<uuid>`; a summary
+  push stamps all its rows with the same id); null for `LogPushSender` and failed pushes.
 
 ## Notifications (`ch.perimetre.notification`)
 
@@ -211,8 +213,8 @@ CHANTIER En chantier (blue) · RECOURS Recours (purple) · REFUSE Refusé (grey)
 Flutter stable, Riverpod 3 (`flutter_riverpod` + `riverpod_annotation`/`riverpod_generator`),
 go_router (`StatefulShellRoute` with two tabs: `/` Explorer, `/perimetre` Mon périmètre), dio,
 flutter_map with OSM tiles, url_launcher, firebase_core + firebase_messaging, shared_preferences.
-Bundle/application id `ch.perimetre.perimetre` (also the OSM `userAgentPackageName`). French strings
-hardcoded, no i18n.
+iOS bundle id `ch.perimetre.app` (Firebase iOS app, APNs). The Android `applicationId`/namespace and the
+OSM `userAgentPackageName` are still `ch.perimetre.perimetre`. French strings hardcoded, no i18n.
 
 ```
 lib/main.dart                      loads SharedPreferences + initPush(), ProviderScope overrides (retry disabled)
@@ -278,11 +280,11 @@ and nothing else needs to change. If `Firebase.initializeApp` fails, the app als
 
 Setup (Daniel, once):
 1. Firebase console: create a project (e.g. `perimetre`); add an iOS app with bundle id
-   `ch.perimetre.perimetre` (later an Android app with the same id).
+   `ch.perimetre.app` (later an Android app; its `applicationId` is still `ch.perimetre.perimetre`).
 2. Apple Developer → Keys: create an APNs key (.p8), note Key ID and Team ID (`K433J5XKST`). Firebase
    console → Project settings → Cloud Messaging → Apple app configuration: upload it.
 3. `dart pub global activate flutterfire_cli`, then in `app/`: `flutterfire configure
-   --project=<project-id> --platforms=ios,android --ios-bundle-id=ch.perimetre.perimetre
+   --project=<project-id> --platforms=ios,android --ios-bundle-id=ch.perimetre.app
    --android-package-name=ch.perimetre.perimetre --overwrite-firebase-options` (confirm overwriting
    `lib/firebase_options.dart`). Commit the generated files.
 4. Project settings → Service accounts → Generate new private key; save it as

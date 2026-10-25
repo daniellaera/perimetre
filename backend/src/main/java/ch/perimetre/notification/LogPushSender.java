@@ -12,7 +12,7 @@ final class LogPushSender implements PushSender {
     public PushResult send(String token, PushMessage message) {
         log.info("PUSH (log only) token={} title=\"{}\" body=\"{}\" data={}",
                 abbreviate(token), message.title(), message.body(), message.data());
-        return PushResult.sent();
+        return PushResult.sent(null);
     }
 
     private static String abbreviate(String token) {

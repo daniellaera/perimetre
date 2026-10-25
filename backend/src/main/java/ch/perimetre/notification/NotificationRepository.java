@@ -68,9 +68,11 @@ class NotificationRepository {
                 .list();
     }
 
-    void markSent(List<Long> notificationIds) {
-        jdbc.sql("UPDATE notification SET status = 'SENT', sent_at = now(), error = NULL"
+    /** A summary push marks all its rows with the same {@code messageId}. */
+    void markSent(List<Long> notificationIds, String messageId) {
+        jdbc.sql("UPDATE notification SET status = 'SENT', sent_at = now(), error = NULL, fcm_message_id = :messageId"
                         + " WHERE id = ANY(CAST(:ids AS bigint[]))")
+                .param("messageId", messageId)
                 .param("ids", notificationIds.toArray(Long[]::new))
                 .update();
     }

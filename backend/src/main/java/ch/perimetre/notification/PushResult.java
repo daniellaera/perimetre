@@ -1,6 +1,7 @@
 package ch.perimetre.notification;
 
-public record PushResult(Status status, String error) {
+/** {@code messageId}: the sender's id of a sent push (FCM: {@code projects/<id>/messages/<uuid>}), else null. */
+public record PushResult(Status status, String messageId, String error) {
 
     public enum Status {
         SENT,
@@ -10,15 +11,15 @@ public record PushResult(Status status, String error) {
         FAILED
     }
 
-    static PushResult sent() {
-        return new PushResult(Status.SENT, null);
+    static PushResult sent(String messageId) {
+        return new PushResult(Status.SENT, messageId, null);
     }
 
     static PushResult invalidToken(String error) {
-        return new PushResult(Status.INVALID_TOKEN, error);
+        return new PushResult(Status.INVALID_TOKEN, null, error);
     }
 
     static PushResult failed(String error) {
-        return new PushResult(Status.FAILED, error);
+        return new PushResult(Status.FAILED, null, error);
     }
 }

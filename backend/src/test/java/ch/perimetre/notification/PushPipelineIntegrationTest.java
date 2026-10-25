@@ -86,6 +86,11 @@ class PushPipelineIntegrationTest {
                 .query(String.class)
                 .single();
         assertThat(status).isEqualTo("SENT");
+        // LogPushSender has no message id; FcmPushSender stores FCM's.
+        assertThat(jdbc.sql("SELECT fcm_message_id IS NULL FROM notification WHERE subscription_id = ?")
+                .param(subscriptionId)
+                .query(Boolean.class)
+                .single()).isTrue();
         assertThat(output).contains("PUSH (log only)", "Pose d'une pergola à 111 m",
                 "Les travaux commencent. Pose d'une pergola", "new_groupe=CHANTIER");
 
