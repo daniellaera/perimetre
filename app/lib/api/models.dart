@@ -15,29 +15,37 @@ class AddressSuggestion {
 }
 
 /// Status group computed by the backend from the SITG `statut` (see CLAUDE.md).
-/// The backend never returns IGNORE or TERMINE from /dossiers.
+/// The backend never returns IGNORE or TERMINE from /dossiers; they map to [autre] elsewhere.
 enum Groupe {
-  depose('Déposé', 'Déposé, en cours d\'examen'),
-  autorise('Autorisé', 'Autorisé'),
-  chantier('En chantier', 'En chantier'),
-  recours('Recours', 'Recours en cours'),
-  refuse('Refusé', 'Refusé, abandonné ou caduc'),
-  autre('Autre', 'Autre statut');
+  depose('DEPOSE', 'Déposé', 'Déposé, en cours d\'examen'),
+  autorise('AUTORISE', 'Autorisé', 'Autorisé'),
+  chantier('CHANTIER', 'En chantier', 'En chantier'),
+  recours('RECOURS', 'Recours', 'Recours en cours'),
+  refuse('REFUSE', 'Refusé', 'Refusé, abandonné ou caduc'),
+  autre(null, 'Autre', 'Autre statut');
 
-  const Groupe(this.label, this.longLabel);
+  const Groupe(this.apiName, this.label, this.longLabel);
 
+  /// Backend name; null for [autre].
+  final String? apiName;
   final String label;
   final String longLabel;
 
-  static Groupe fromApi(String? value) => switch (value) {
-    'DEPOSE' => depose,
-    'AUTORISE' => autorise,
-    'CHANTIER' => chantier,
-    'RECOURS' => recours,
-    'REFUSE' => refuse,
-    _ => autre,
-  };
+  /// The groupes a subscription can be notified about, in display order.
+  static const notifiable = [depose, autorise, chantier, recours, refuse];
+
+  static Groupe fromApi(String? value) => values.firstWhere((g) => g.apiName == value, orElse: () => autre);
 }
+
+/// Event wording, identical to the push body's first sentence (backend `PushMessages`).
+String eventText(Groupe groupe) => switch (groupe) {
+  Groupe.depose => 'Nouvelle demande déposée — délai d\'opposition en cours',
+  Groupe.autorise => 'Autorisation délivrée',
+  Groupe.chantier => 'Les travaux commencent',
+  Groupe.recours => 'Un recours a été déposé',
+  Groupe.refuse => 'Le projet ne se fera pas',
+  Groupe.autre => 'Changement de statut',
+};
 
 /// Flags computed by the backend from the description, in display order.
 const flagLabels = {
@@ -144,4 +152,106 @@ class Dossier {
   String get title => description ?? operationLabel;
 
   String get typeDossierLabel => _typeDossierLabels[typeDossier] ?? typeDossier;
+}
+
+/// A notification subscription as returned by /subscriptions (the push token is never echoed back).
+class Subscription {
+  const Subscription({
+    required this.id,
+    required this.lat,
+    required this.lng,
+    required this.radiusM,
+    required this.categories,
+    required this.label,
+  });
+
+  final String id;
+  final double lat;
+  final double lng;
+  final int radiusM;
+  final List<Groupe> categories;
+
+  /// The address label chosen in the app.
+  final String? label;
+
+  factory Subscription.fromJson(Map<String, dynamic> json) => Subscription(
+    id: json['id'] as String,
+    lat: (json['lat'] as num).toDouble(),
+    lng: (json['lng'] as num).toDouble(),
+    radiusM: json['radius_m'] as int,
+    categories: (json['categories'] as List).map((c) => Groupe.fromApi(c as String)).toList(),
+    label: json['label'] as String?,
+  );
+}
+
+/// Body of POST and PUT /subscriptions.
+class SubscriptionInput {
+  const SubscriptionInput({
+    required this.pushToken,
+    required this.platform,
+    required this.lat,
+    required this.lng,
+    required this.radiusM,
+    required this.categories,
+    required this.label,
+  });
+
+  final String pushToken;
+  final String platform;
+  final double lat;
+  final double lng;
+  final int radiusM;
+  final List<Groupe> categories;
+  final String? label;
+
+  SubscriptionInput withToken(String token) => SubscriptionInput(
+    pushToken: token,
+    platform: platform,
+    lat: lat,
+    lng: lng,
+    radiusM: radiusM,
+    categories: categories,
+    label: label,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'push_token': pushToken,
+    'platform': platform,
+    'lat': lat,
+    'lng': lng,
+    'radius_m': radiusM,
+    'categories': [for (final c in categories) c.apiName],
+    'label': label,
+  };
+}
+
+/// An event in a subscription's perimeter: the dossier (with `distance_m` from the subscription point and its
+/// current groupe) plus what changed.
+class DossierEvent {
+  const DossierEvent({
+    required this.eventId,
+    required this.kind,
+    required this.oldGroupe,
+    required this.newGroupe,
+    required this.occurredAt,
+    required this.dossier,
+  });
+
+  final int eventId;
+
+  /// NEW or GROUPE_CHANGE.
+  final String kind;
+  final Groupe? oldGroupe;
+  final Groupe newGroupe;
+  final DateTime occurredAt;
+  final Dossier dossier;
+
+  factory DossierEvent.fromJson(Map<String, dynamic> json) => DossierEvent(
+    eventId: json['event_id'] as int,
+    kind: json['kind'] as String,
+    oldGroupe: json['old_groupe'] == null ? null : Groupe.fromApi(json['old_groupe'] as String),
+    newGroupe: Groupe.fromApi(json['new_groupe'] as String),
+    occurredAt: DateTime.parse(json['occurred_at'] as String).toLocal(),
+    dossier: Dossier.fromJson(json),
+  );
 }

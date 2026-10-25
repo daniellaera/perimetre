@@ -5,7 +5,7 @@ import '../../api/models.dart';
 import 'providers.dart';
 import 'widgets.dart';
 
-/// The single screen: address + radius on top, map in the middle, dossier list in a sheet.
+/// Explore tab: address + radius on top, map in the middle, dossier list in a sheet.
 class ExploreScreen extends ConsumerWidget {
   const ExploreScreen({super.key});
 
@@ -34,9 +34,14 @@ class ExploreScreen extends ConsumerWidget {
         bottom: false,
         child: Column(
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Column(children: [AddressField(), RadiusSlider()]),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Column(
+                children: [
+                  AddressField(onSelected: ref.read(selectedAddressProvider.notifier).select),
+                  RadiusSlider(value: radius, onChangeEnd: ref.read(radiusMetresProvider.notifier).set),
+                ],
+              ),
             ),
             Expanded(
               child: Stack(

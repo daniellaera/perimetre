@@ -43,7 +43,10 @@ String truncate(String text, int maxChars) =>
 // Address field with geo.admin.ch suggestions
 
 class AddressField extends ConsumerStatefulWidget {
-  const AddressField({super.key});
+  const AddressField({super.key, required this.onSelected, this.initialText});
+
+  final ValueChanged<AddressSuggestion> onSelected;
+  final String? initialText;
 
   @override
   ConsumerState<AddressField> createState() => _AddressFieldState();
@@ -77,10 +80,11 @@ class _AddressFieldState extends ConsumerState<AddressField> {
   Widget build(BuildContext context) {
     return Autocomplete<AddressSuggestion>(
       optionsBuilder: _options,
+      initialValue: widget.initialText == null ? null : TextEditingValue(text: widget.initialText!),
       displayStringForOption: (a) => a.label,
       onSelected: (a) {
         FocusScope.of(context).unfocus();
-        ref.read(selectedAddressProvider.notifier).select(a);
+        widget.onSelected(a);
       },
       fieldViewBuilder: (context, controller, focusNode, onSubmitted) => TextField(
         controller: controller,
@@ -108,15 +112,24 @@ class _AddressFieldState extends ConsumerState<AddressField> {
 // ---------------------------------------------------------------------------
 // Radius slider: updates its label live, commits (and refetches) on release.
 
-class RadiusSlider extends ConsumerStatefulWidget {
-  const RadiusSlider({super.key});
+class RadiusSlider extends StatefulWidget {
+  const RadiusSlider({super.key, required this.value, required this.onChangeEnd});
+
+  final int value;
+  final ValueChanged<int> onChangeEnd;
 
   @override
-  ConsumerState<RadiusSlider> createState() => _RadiusSliderState();
+  State<RadiusSlider> createState() => _RadiusSliderState();
 }
 
-class _RadiusSliderState extends ConsumerState<RadiusSlider> {
-  late double _value = ref.read(radiusMetresProvider).toDouble();
+class _RadiusSliderState extends State<RadiusSlider> {
+  late double _value = widget.value.toDouble();
+
+  @override
+  void didUpdateWidget(RadiusSlider old) {
+    super.didUpdateWidget(old);
+    if (old.value != widget.value) _value = widget.value.toDouble();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -131,7 +144,7 @@ class _RadiusSliderState extends ConsumerState<RadiusSlider> {
             divisions: (maxRadius - minRadius) ~/ 50,
             label: '${_value.round()} m',
             onChanged: (v) => setState(() => _value = v),
-            onChangeEnd: (v) => ref.read(radiusMetresProvider.notifier).set(v.round()),
+            onChangeEnd: (v) => widget.onChangeEnd(v.round()),
           ),
         ),
         SizedBox(width: 64, child: Text('${_value.round()} m', textAlign: TextAlign.end)),
@@ -349,10 +362,13 @@ class DossierSheet extends StatelessWidget {
 }
 
 class DossierRow extends StatelessWidget {
-  const DossierRow(this.dossier, {super.key, required this.onTap});
+  const DossierRow(this.dossier, {super.key, required this.onTap, this.event});
 
   final Dossier dossier;
   final ValueChanged<Dossier> onTap;
+
+  /// When set (subscription feed), the event text leads the row and sets the marker colour.
+  final DossierEvent? event;
 
   @override
   Widget build(BuildContext context) {
@@ -361,11 +377,23 @@ class DossierRow extends StatelessWidget {
     final flags = d.flags.where(_rowFlags.contains);
     // When the description is the main text, the operation label adds information, unless it is the generic default.
     final showOperation = d.description != null && d.operationLabel != defaultOperationLabel;
+    final e = event;
     return ListTile(
       onTap: () => onTap(d),
-      leading: CircleAvatar(radius: 8, backgroundColor: groupeColor(d.groupe)),
+      leading: CircleAvatar(radius: 8, backgroundColor: groupeColor(e?.newGroupe ?? d.groupe)),
       minLeadingWidth: 16,
-      title: Text(truncate(d.title, 90)),
+      title: e == null
+          ? Text(truncate(d.title, 90))
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${eventText(e.newGroupe)} · ${formatDate(e.occurredAt)}',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(color: groupeColor(e.newGroupe)),
+                ),
+                Text(truncate(d.title, 90)),
+              ],
+            ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -430,6 +458,8 @@ class _DossierDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    // The generic "Demande" label says nothing: the description becomes the title instead.
+    final descriptionIsTitle = d.operationLabel == defaultOperationLabel && d.description != null;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
@@ -437,10 +467,10 @@ class _DossierDetails extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(d.operationLabel, style: text.titleLarge),
+            Text(descriptionIsTitle ? d.description! : d.operationLabel, style: text.titleLarge),
             const SizedBox(height: 4),
             SelectableText(d.idDossier, style: text.bodyMedium?.copyWith(color: Colors.black54)),
-            if (d.description != null) ...[
+            if (d.description != null && !descriptionIsTitle) ...[
               const SizedBox(height: 12),
               Text(d.description!, style: text.bodyLarge),
             ],

@@ -9,3 +9,6 @@ app/build/
 app/.dart_tool/
 # Per-session port overrides (see CLAUDE.md "Local ports")
 docker-compose.override.yml
+
+# Local secrets (Firebase service-account JSON, see CLAUDE.md)
+backend/.secrets/

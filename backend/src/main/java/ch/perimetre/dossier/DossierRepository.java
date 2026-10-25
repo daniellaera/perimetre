@@ -4,7 +4,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -57,8 +61,25 @@ public class DossierRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public long count() {
-        return jdbc.sql("SELECT count(*) FROM dossier").query(Long.class).single();
+    /** Stored groupe by id_dossier for those of {@code ids} that exist, in one query. */
+    public Map<String, Groupe> findGroupes(Collection<String> ids) {
+        Map<String, Groupe> groupes = new HashMap<>();
+        if (ids.isEmpty()) {
+            return groupes;
+        }
+        jdbc.sql("SELECT id_dossier, groupe FROM dossier WHERE id_dossier = ANY(CAST(:ids AS text[]))")
+                .param("ids", ids.toArray(String[]::new))
+                .query(rs -> {
+                    groupes.put(rs.getString("id_dossier"), Groupe.valueOf(rs.getString("groupe")));
+                });
+        return groupes;
+    }
+
+    public Optional<Groupe> findGroupe(String idDossier) {
+        return jdbc.sql("SELECT groupe FROM dossier WHERE id_dossier = ?")
+                .param(idDossier)
+                .query((rs, rowNum) -> Groupe.valueOf(rs.getString("groupe")))
+                .optional();
     }
 
     public void upsert(List<Dossier> dossiers) {
@@ -88,7 +109,8 @@ public class DossierRepository {
                 .list();
     }
 
-    private static DossierView mapView(ResultSet rs, int rowNum) throws SQLException {
+    /** Maps the columns selected by {@link #WITHIN} (also reused by the subscription events query). */
+    public static DossierView mapView(ResultSet rs, int rowNum) throws SQLException {
         return new DossierView(
                 rs.getString("id_dossier"),
                 rs.getString("type_dossier"),

@@ -2,9 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'features/explore/explore_screen.dart';
+import 'features/home/home_shell.dart';
+import 'features/subscription/subscription_screen.dart';
 
 final _router = GoRouter(
-  routes: [GoRoute(path: '/', builder: (context, state) => const ExploreScreen())],
+  routes: [
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, shell) => HomeShell(shell: shell),
+      branches: [
+        StatefulShellBranch(routes: [GoRoute(path: '/', builder: (context, state) => const ExploreScreen())]),
+        StatefulShellBranch(
+          routes: [GoRoute(path: '/perimetre', builder: (context, state) => const SubscriptionScreen())],
+        ),
+      ],
+    ),
+  ],
 );
 
 class PerimetreApp extends StatelessWidget {
