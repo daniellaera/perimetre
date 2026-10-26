@@ -28,9 +28,9 @@ Prepared 2026-10-26. Nothing has been uploaded and App Store Connect has not bee
 1. **Backend deploy first.** The new app talks to `/devices` (multi-perimeter API, Flyway V6). Prod runs image
    `caea82fb`, which does not have it, so a build uploaded before the deploy fails on "Mes périmètres". After
    the validation nights: `pg_dump` (rollback past V6 = restore), then deploy `main`, then upload.
-2. **Map tiles.** Release builds still load `tile.openstreetmap.org`, which OSM's policy forbids for a
-   published app. Decide per `docs/map-tiles.md`. Internal TestFlight is tolerable for a few testers;
-   external testing and the App Store are not.
+2. **Map tiles: Mapbox tokens.** Release builds load Mapbox tiles (`docs/map-tiles.md`) and need the production
+   token: `app/config/prod.json` (copy of `config/example.json`), then `flutter build ipa --release
+   --dart-define-from-file=config/prod.json`. Without it the build fails ("Check Mapbox token").
 3. **Privacy page.** `deploy/site/privacy.html` was updated for multiple perimeters and the stored address
    (the live page wrongly says the address is not stored). It goes live with the next `ship.sh`.
 4. **contact@perimetre.ch** is the support address on the site and in the privacy page. Check that the
@@ -77,7 +77,7 @@ token is stored next to the perimeters. This is the conservative and accurate an
 Judgement calls, recorded:
 - The address search sends the typed text to geo.admin.ch (Swiss federal geoportal) as a plain API call.
   No SDK is involved and nothing is stored by us, so it is not declared as collection. Same for map tiles
-  (the tile server sees the displayed area) and FCM/APNs delivery (needed to send notifications, covered by
+  (Mapbox sees the displayed area; no Mapbox SDK, no telemetry) and FCM/APNs delivery (needed to send notifications, covered by
   "Device ID"). The privacy page discloses all three.
 - No analytics and no crash reporting are linked into the app (firebase_core + firebase_messaging only).
 
@@ -127,7 +127,7 @@ Mes périmètres with two perimeters. `xcrun simctl io <id> screenshot file.png`
 
 ## TestFlight (Daniel)
 
-1. `cd app && flutter build ipa --release`. The release build defaults to `https://api.perimetre.ch`. Each new
+1. `cd app && flutter build ipa --release --dart-define-from-file=config/prod.json`. The release build defaults to `https://api.perimetre.ch`. Each new
    upload needs a higher build number: bump `version: 1.0.0+N` in `pubspec.yaml`.
 2. Upload `app/build/ios/ipa/Périmètre.ipa`, either with **Transporter** (drag and drop, signed in with your
    Apple ID) or with `xcrun altool --upload-app --type ios -f app/build/ios/ipa/*.ipa --apiKey <key id>

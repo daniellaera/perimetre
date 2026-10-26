@@ -33,3 +33,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    # The Mapbox logo, required on Mapbox maps (lib/map/map_tiles.dart); resolution variants in 2.0x/ and 3.0x/.
+    - assets/mapbox-logo.png

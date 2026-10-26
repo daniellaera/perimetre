@@ -1,8 +1,9 @@
 # Map tiles: replacing OSM's public tile servers
 
-Status 2026-10-26: **decision needed**. The app still uses `tile.openstreetmap.org`, which OSM's tile usage
-policy does not allow for a published app. Nothing below needs code until a provider is chosen; the swap is
-one `TileLayer` (raster) or the map widget (vector) in `app/lib/features/explore/widgets.dart`.
+**Decision (2026-10-26): Mapbox raster tiles**, styles `light-v11` / `dark-v11` through the Static Tiles API,
+in the existing flutter_map `TileLayer` (no map rewrite). **Fallback: OpenFreeMap** (vector, no account),
+possibly self-hosted. Implemented in `app/lib/map/map_tiles.dart`; see "Implementation" at the end. The
+evaluation that led there follows.
 
 ## Requirements
 
@@ -48,20 +49,39 @@ less with flutter_map 8's built-in tile cache. Prices are from the providers' pr
 them before choosing. Whether a free, ad-free civic app counts as "non-commercial" is not defined by
 Stadia or MapTiler; ask them before relying on a free plan.
 
-## Recommendation
+## Decision
 
-1. **OpenFreeMap `positron` / `dark`** if a vector map is acceptable. No account, no cost, no request
-   limit, global OSM coverage, and light + dark styles matching the app. It costs work: flutter_map
-   needs `vector_map_tiles` (9.x for flutter_map 8, beta) or a switch to `maplibre_gl` (native
-   MapLibre, mature; markers become symbol layers or overlays). The public instance is one person's
-   donation-funded project. If it disappears, the same stack can be self-hosted: OpenFreeMap is fully
-   open source, and a regional PMTiles extract of Geneva plus the French border is small enough to serve
-   from our own Caddy.
-2. **Mapbox Static Tiles** (styles `light-v11` / `dark-v11`) if the map should stay raster with no
-   rewrite: a one-line `TileLayer` change, free at our volume today, commercial use allowed. It needs a
-   Mapbox account and a public token in the app. It carries a cost risk above ~200k tiles/month, so
-   enable the tile cache.
+1. **Mapbox Static Tiles, `light-v11` / `dark-v11`** (chosen): the map stays raster with no rewrite, it is free
+   at our volume (512 px tiles are a quarter of the requests of 256 px ones: roughly 40k–110k requests/month
+   for the volume above, against 200k free), commercial use is allowed, and both styles cover both sides of
+   the border at street zoom (OSM data). It needs a Mapbox account and public tokens in the app (one per
+   build type), and carries a cost risk above 200k requests/month: watch the Mapbox dashboard.
+2. **OpenFreeMap `positron` / `dark`** (fallback): no account, no cost, no request limit, same OSM coverage.
+   It costs a map rewrite: flutter_map needs `vector_map_tiles` (9.x for flutter_map 8, beta) or a switch to
+   `maplibre_gl` (native MapLibre; markers become symbol layers or overlays). The public instance is one
+   person's donation-funded project; the same stack can be self-hosted, since OpenFreeMap is open source and a
+   PMTiles extract of Geneva plus the French border is small enough to serve from our own Caddy.
 
-Either way, update the attribution chip (`© OpenStreetMap contributors` today) to the provider's wording,
-plus the Mapbox logo for option 2. Keep the attribution at the top of the map, because the list sheet
-covers the bottom.
+## Implementation
+
+- `baseTileLayer(brightness)` (`app/lib/map/map_tiles.dart`): `https://api.mapbox.com/styles/v1/mapbox/
+  {light-v11|dark-v11}/tiles/512/{z}/{x}/{y}@2x?access_token=…`, `tileDimension: 512`, `zoomOffset: -1`,
+  following the app theme (the app has a dark theme since this change). flutter_map 8's built-in tile cache
+  keeps tiles as long as Mapbox's HTTP headers allow (`max-age` 12 h); nothing is stored beyond that.
+- **Attribution** (`MapAttribution`), per [Mapbox's attribution guide](https://docs.mapbox.com/help/dive-deeper/attribution/):
+  the Mapbox logo (unmodified, from Mapbox GL JS, `app/assets/mapbox-logo.png`) and the links "© Mapbox"
+  (mapbox.com), "© OpenStreetMap" (openstreetmap.org/copyright) and "Improve this map"
+  (`apps.mapbox.com/feedback/#/{lng}/{lat}/{zoom}` of the current view), always visible at the top of the
+  map, because the list sheet covers its bottom. The guide's telemetry opt-out applies to the Mapbox SDKs,
+  which the app does not use (no telemetry is sent). Mapbox's terms allow incorporating its services in an
+  app, and its Static Tiles docs list third-party tile clients (Leaflet, OpenLayers…) as supported uses.
+- **Tokens:** public `pk.` tokens, one for development, one for release, with only the default public
+  scopes. They are passed at build time (`--dart-define-from-file=config/dev.json` / `config/prod.json`,
+  git-ignored, template `app/config/example.json`) and end up in the app binary, as any client token does.
+  A Release iOS build without a `pk.` token fails (Runner build phase "Check Mapbox token"). Debug builds
+  without a token use OSM's public tiles (development only). gitleaks (`.gitleaks.toml`) rejects any
+  Mapbox token in the history, in CI and in the optional pre-commit hook (`.githooks/pre-commit`).
+- **Check:** `integration_test/map_tiles_test.dart` loads Geneva centre, Annemasse and Ferney-Voltaire at
+  zoom 17 in light and dark, fails on any tile error and writes screenshots to `app/build/map-screenshots/`.
+- Mapbox URL restrictions only work for web requests, so the tokens cannot be locked to the app. If a token is
+  abused, rotate it in the Mapbox account and ship a build with the new one.

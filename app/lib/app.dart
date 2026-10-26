@@ -19,6 +19,9 @@ final _router = GoRouter(
   ],
 );
 
+/// The app red (also the icon's background).
+const _seed = Color(0xFFC8102E);
+
 class PerimetreApp extends StatelessWidget {
   const PerimetreApp({super.key});
 
@@ -27,7 +30,8 @@ class PerimetreApp extends StatelessWidget {
     return MaterialApp.router(
       title: 'Périmètre',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: const Color(0xFFC8102E), useMaterial3: true),
+      theme: ThemeData(colorSchemeSeed: _seed, useMaterial3: true),
+      darkTheme: ThemeData(colorSchemeSeed: _seed, brightness: Brightness.dark, useMaterial3: true),
       routerConfig: _router,
     );
   }

@@ -1,0 +1,13 @@
+# gitleaks config: the default rules plus Mapbox access tokens, whatever the surrounding text. The default
+# mapbox-api-token rule only fires next to the word "mapbox" (a token alone in a JSON or .xcconfig file
+# would pass). Used by CI (secrets-scan) and the pre-commit hook (.githooks/pre-commit).
+title = "Périmètre"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "mapbox-access-token"
+description = "Mapbox access token (pk. public, sk. secret, tk. temporary)"
+regex = '''\b(?:pk|sk|tk)\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{20,}'''
+keywords = ["pk.eyj", "sk.eyj", "tk.eyj"]

@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../api/models.dart';
+import '../../map/map_tiles.dart';
 import 'providers.dart';
 
 enum ListStatus { idle, loading, error, data }
@@ -180,7 +181,6 @@ class DossierMap extends StatefulWidget {
 
 class _DossierMapState extends State<DossierMap> {
   static const _geneva = LatLng(46.2044, 6.1432);
-  static const _userAgentPackageName = 'ch.perimetre.perimetre';
 
   final _controller = MapController();
   double _height = 0;
@@ -216,12 +216,14 @@ class _DossierMapState extends State<DossierMap> {
         _height = constraints.maxHeight;
         return FlutterMap(
           mapController: _controller,
-          options: const MapOptions(initialCenter: _geneva, initialZoom: 13),
+          options: MapOptions(
+            initialCenter: _geneva,
+            initialZoom: 13,
+            // Shown until the tiles arrive.
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+          ),
           children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: _userAgentPackageName,
-            ),
+            baseTileLayer(Theme.of(context).brightness),
             if (center != null)
               CircleLayer(
                 circles: [
@@ -260,22 +262,11 @@ class _DossierMapState extends State<DossierMap> {
                     width: 36,
                     height: 36,
                     alignment: Alignment.topCenter,
-                    child: const Icon(Icons.place, size: 36, color: Colors.black87),
+                    child: Icon(Icons.place, size: 36, color: Theme.of(context).colorScheme.onSurface),
                   ),
               ],
             ),
-            // OSM attribution at the top: the bottom of the map is covered by the sheet.
-            Align(
-              alignment: Alignment.topRight,
-              child: GestureDetector(
-                onTap: () => launchUrl(Uri.parse('https://www.openstreetmap.org/copyright')),
-                child: Container(
-                  color: Colors.white70,
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  child: const Text('© OpenStreetMap contributors', style: TextStyle(fontSize: 11)),
-                ),
-              ),
-            ),
+            const MapAttribution(),
           ],
         );
       },
@@ -351,7 +342,10 @@ class DossierSheet extends StatelessWidget {
           margin: const EdgeInsets.symmetric(vertical: 8),
           width: 36,
           height: 4,
-          decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(2)),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.outlineVariant,
+            borderRadius: BorderRadius.circular(2),
+          ),
         ),
         Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: body),
         if (status == ListStatus.loading) const LinearProgressIndicator(),
@@ -408,7 +402,7 @@ class DossierRow extends StatelessWidget {
           ? null
           : Row(
               mainAxisSize: MainAxisSize.min,
-              children: [for (final f in flags) Icon(flagIcon(f), size: 18, color: Colors.black54)],
+              children: [for (final f in flags) Icon(flagIcon(f), size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant)],
             ),
     );
   }
@@ -472,7 +466,7 @@ class _DossierDetails extends StatelessWidget {
           children: [
             Text(descriptionIsTitle ? d.description! : d.operationLabel, style: text.titleLarge),
             const SizedBox(height: 4),
-            SelectableText(d.idDossier, style: text.bodyMedium?.copyWith(color: Colors.black54)),
+            SelectableText(d.idDossier, style: text.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             if (d.description != null && !descriptionIsTitle) ...[
               const SizedBox(height: 12),
               Text(d.description!, style: text.bodyLarge),
@@ -534,7 +528,7 @@ class _DossierDetails extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: text.labelMedium?.copyWith(color: Colors.black54)),
+          Text(label, style: text.labelMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
           Text(value, style: text.bodyMedium),
         ],
       ),
