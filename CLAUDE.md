@@ -342,7 +342,9 @@ Setup (Daniel, once; done for iOS; Android still needs steps 1 and 3):
 - **Stack** (compose project `perimetre`, `deploy/docker-compose.prod.yml`): `caddy` (the only
   published ports, 80/443; Let's Encrypt certificates in the `caddy_data` volume), `backend` (registry
   image, no host port, `TZ=Europe/Zurich`, `mem_limit` 1.5 GB → 768 MB heap), `db`
-  (`imresamu/postgis:17-3.5`, volume `db_data`, no host port). No Redis. Every image is pinned by tag +
+  (`imresamu/postgis:17-3.5`, volume `db_data`, no host port, `TZ` + `log_timezone` Europe/Zurich;
+  the session `timezone` stays UTC). Every `@Scheduled` cron carries `zone = "Europe/Zurich"`; the
+  JVM's `TZ` only affects log timestamps. No Redis. Every image is pinned by tag +
   digest, every log capped at 5 × 10 MB. Caddy: `api.perimetre.ch` → `backend:8090`;
   `perimetre.ch` → `site/` (`index.html`, `privacy.html`, served at `/privacy` too); `www` → apex.
   The backend trusts `X-Forwarded-*` (`server.forward-headers-strategy: framework` in

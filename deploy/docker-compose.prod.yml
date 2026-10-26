@@ -49,7 +49,8 @@ services:
     # the startup; AdminSecurityConfig refuses an ADMIN_TOKEN under 32 chars.
     env_file: .env.prod
     environment:
-      # Log timestamps in the zone the cron jobs run in (ImportJob pins its own zone).
+      # Log timestamps in the zone the cron jobs run in. The @Scheduled crons
+      # pin zone = "Europe/Zurich" themselves and do not depend on it.
       TZ: Europe/Zurich
     volumes:
       # Firebase service account (600, uid 1000 = ubuntu = the image's user).
@@ -69,9 +70,13 @@ services:
     restart: always
     logging: *default-logging
     # terse: no DETAIL in Postgres's own log, where a constraint violation
-    # prints the offending row (push tokens included).
-    command: ["postgres", "-c", "log_error_verbosity=terse"]
+    # prints the offending row (push tokens included). log_timezone: the
+    # cluster was initialised in UTC and keeps that in postgresql.conf, so TZ
+    # alone would not change the log. The session `timezone` stays UTC; the
+    # backend's JDBC sessions use the JVM's zone anyway.
+    command: ["postgres", "-c", "log_error_verbosity=terse", "-c", "log_timezone=Europe/Zurich"]
     environment:
+      TZ: Europe/Zurich
       POSTGRES_DB: perimetre
       POSTGRES_USER: ${DB_USER:?DB_USER must be set}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
