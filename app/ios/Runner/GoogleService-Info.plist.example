@@ -2,13 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   Copy to GoogleService-Info.plist (git-ignored): the Xcode project bundles that file, so the build needs it.
-  These placeholders are never read unless Firebase is configured; `flutterfire configure` writes the real
+  The native Firebase SDK reads this file at launch and validates its format, so the placeholders are fake
+  but well-formed (key: "A" + 38 characters). They reach no Firebase project: without a generated
+  lib/firebase_options.dart the app uses its push stub. `flutterfire configure` writes the real
   file (see README, "Push notifications").
 -->
 <plist version="1.0">
 <dict>
 	<key>API_KEY</key>
-	<string>YOUR_IOS_API_KEY</string>
+	<string>Axxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</string>
 	<key>GCM_SENDER_ID</key>
 	<string>000000000000</string>
 	<key>PLIST_VERSION</key>
