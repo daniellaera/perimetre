@@ -31,7 +31,9 @@ Details in CLAUDE.md, "Production".
    call: ask if they have not said "ship"/"deploy".
 3. **Wait for the pipeline** of that commit: `glab ci status --live` (or `glab ci view`). Failed → read
    the job log (`glab ci trace`), report, stop.
-4. **Ship.** `deploy/ship.sh` (`:latest`) or `deploy/ship.sh <short-sha>` to pin. It syncs the deploy
+4. **Ship.** `deploy/ship.sh` (`:latest`) or `deploy/ship.sh <short-sha>` to pin (8 chars, GitLab's
+   `CI_COMMIT_SHORT_SHA`). Until the box has a registry login (CLAUDE.md, "Production"): pull on the
+   Mac, `docker save | ssh perimetre-prod docker load`, tag `:latest` there, `deploy/ship.sh --no-pull`. It syncs the deploy
    files, checks `.env.prod` (names only) and the Firebase key, saves the running backend's log to
    `/opt/perimetre/logs/`, pulls, `up -d`, reloads Caddy, waits for container health, prints the image
    (id, digest, `org.opencontainers.image.revision`) and the public health JSON. Non-zero exit = failed:

@@ -348,8 +348,11 @@ Setup (Daniel, once; done for iOS; Android still needs steps 1 and 3):
   HTTP/3: Caddy is set to h1/h2). Password and root SSH logins are off, fail2ban has an sshd jail,
   unattended-upgrades is on. All of it comes from `deploy/bootstrap.sh` (idempotent; re-run with
   `ssh perimetre-prod 'sudo bash -s' < deploy/bootstrap.sh`).
-- **DNS** (Infomaniak, ns11/ns12.infomaniak.ch): `perimetre.ch` and `api.perimetre.ch` A → the host.
-  No AAAA (the host has IPv6, unpublished).
+- **DNS** (Infomaniak, ns11/ns12.infomaniak.ch; domain registered 2026-10-26, delegated ~09:10):
+  `perimetre.ch` and `api.perimetre.ch` A → the host. **`www.perimetre.ch` has no record yet**: Caddy
+  keeps retrying its certificate (backoff, NXDOMAIN in `docker logs perimetre-caddy-1`); once the A
+  record exists, `docker restart perimetre-caddy-1` makes it retry at once. No AAAA (the host has IPv6,
+  unpublished).
 - **`/opt/perimetre`** (owned by `ubuntu`):
   | path | what |
   |------|------|
@@ -384,7 +387,7 @@ Setup (Daniel, once; done for iOS; Android still needs steps 1 and 3):
   pull the CI image on the Mac, `docker save <image> | gzip | ssh perimetre-prod 'gunzip | docker load'`,
   `docker tag` it `:latest` there, and run `deploy/ship.sh --no-pull`.
 - **Deploy:** tests green locally → push main → wait for the pipeline (`glab ci status --live`) →
-  **`deploy/ship.sh`** (or `deploy/ship.sh <short-sha>` to pin or roll back; `--no-pull` uses the image
+  **`deploy/ship.sh`** (or `deploy/ship.sh <short-sha>` to pin or roll back, GitLab's 8-char short sha; `--no-pull` uses the image
   already on the box). The `ship` skill (`.claude/skills/ship/SKILL.md`) walks through it.
 - **Logs:** `ssh perimetre-prod 'docker logs -f --since 1h perimetre-backend-1'` (same for
   `perimetre-caddy-1`, `perimetre-db-1`); saved pre-deploy logs in `/opt/perimetre/logs/`; backups
@@ -421,6 +424,12 @@ Setup (Daniel, once; done for iOS; Android still needs steps 1 and 3):
      `0 3 * * * ubuntu set -a; . /opt/perimetre/secrets/restic.env; restic backup -q /opt/perimetre/backups && restic forget -q --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune 2>&1 | logger -t perimetre-backup`
      (put it in `bootstrap.sh` once it works).
   5. Restore one dump from restic to a scratch directory and `pg_restore --list` it.
+- **Go-live 2026-10-26** (image `5655948f`): bootstrap `POST /admin/import?mode=full` over HTTPS →
+  20,902 dossiers in 13 s, 0 events. A second full refresh right after: 0 events, 0 new ids and 0 rows
+  whose content (all columns but `first_seen`/`last_seen`) changed, so the import is idempotent. Restore
+  test: the 09:17 dump restored into a throwaway `--network none` PostGIS container matched prod's row
+  count on every table. From outside only 22/80/443 answer (5432, 6379, 8090 time out). Idle memory:
+  backend ~190 MB, db ~50 MB, caddy ~15 MB.
 - **Never** `docker compose down -v` on the box (deletes the database and Caddy's certificates), never
   copy `.env.prod` off the box or overwrite it from elsewhere, never print the values in it or in
   `secrets/`.

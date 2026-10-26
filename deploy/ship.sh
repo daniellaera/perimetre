@@ -93,6 +93,13 @@ digest   {{join .RepoDigests \" \"}}
 revision {{index .Config.Labels \"org.opencontainers.image.revision\"}}'"
 
 say "health $HEALTH"
-curl -fsS --max-time 15 "$HEALTH" || fail "public health check failed (backend is healthy: check Caddy, $COMPOSE logs caddy)"
+# Retried for 2 minutes: on a first start Caddy is still obtaining its certificates.
+body=
+for _ in $(seq 1 24); do
+	body=$(curl -fsS --max-time 10 "$HEALTH" 2>/dev/null) && break
+	sleep 5
+done
+[ -n "$body" ] || fail "public health check failed (backend is healthy: check Caddy, $COMPOSE logs caddy)"
+echo "$body"
 echo
 say "shipped"
