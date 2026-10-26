@@ -6,6 +6,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import ch.perimetre.job.JobRun.Trigger;
+
 // /admin/** is guarded by the ADMIN_TOKEN bearer filter (ch.perimetre.admin).
 @RestController
 class ImportController {
@@ -25,6 +27,6 @@ class ImportController {
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
-        return job.run(parsed);
+        return job.run(parsed, Trigger.MANUAL);
     }
 }

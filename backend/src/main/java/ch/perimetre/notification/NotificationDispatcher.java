@@ -37,31 +37,44 @@ public class NotificationDispatcher {
         this.sender = sender;
     }
 
-    /** {@code notifications}: rows created; {@code pushes}: pushes sent successfully. */
-    public record DispatchResult(int notifications, int pushes) {
+    /**
+     * {@code notifications}: rows created; {@code pushes}: pushes sent successfully; {@code pushErrors}:
+     * pushes that failed (invalid token or any other error).
+     */
+    public record DispatchResult(int notifications, int pushes, int pushErrors) {
+
+        public static final DispatchResult NONE = new DispatchResult(0, 0, 0);
+    }
+
+    /** Per subscription: pushes sent and pushes failed. */
+    private record SendResult(int sent, int failed) {
     }
 
     public DispatchResult dispatch(List<Long> eventIds) {
         if (eventIds.isEmpty()) {
-            return new DispatchResult(0, 0);
+            return DispatchResult.NONE;
         }
         int created = notifications.createPending(eventIds);
         Map<UUID, List<PendingNotification>> bySubscription = notifications.findPending(eventIds).stream()
                 .collect(Collectors.groupingBy(PendingNotification::subscriptionId, LinkedHashMap::new,
                         Collectors.toList()));
         int pushes = 0;
+        int errors = 0;
         for (Map.Entry<UUID, List<PendingNotification>> entry : bySubscription.entrySet()) {
-            pushes += sendTo(entry.getKey(), entry.getValue());
+            SendResult result = sendTo(entry.getKey(), entry.getValue());
+            pushes += result.sent();
+            errors += result.failed();
         }
-        log.info("Dispatched {} events: {} notifications, {} pushes to {} subscriptions",
-                eventIds.size(), created, pushes, bySubscription.size());
-        return new DispatchResult(created, pushes);
+        log.info("Dispatched {} events: {} notifications, {} pushes ({} failed) to {} subscriptions",
+                eventIds.size(), created, pushes, errors, bySubscription.size());
+        return new DispatchResult(created, pushes, errors);
     }
 
-    private int sendTo(UUID subscriptionId, List<PendingNotification> pending) {
+    private SendResult sendTo(UUID subscriptionId, List<PendingNotification> pending) {
         String token = pending.getFirst().pushToken();
         List<PlannedPush> plan = PushPlanner.plan(pending);
         int sent = 0;
+        int failed = 0;
         for (int i = 0; i < plan.size(); i++) {
             PlannedPush push = plan.get(i);
             PushResult result = send(token, push.message());
@@ -73,6 +86,7 @@ public class NotificationDispatcher {
                 case FAILED -> {
                     log.warn("Push to subscription {} failed: {}", subscriptionId, result.error());
                     notifications.markFailed(push.notificationIds(), result.error());
+                    failed++;
                 }
                 case INVALID_TOKEN -> {
                     notifications.markFailed(push.notificationIds(), result.error());
@@ -86,14 +100,14 @@ public class NotificationDispatcher {
                         subscriptions.delete(subscriptionId);
                         log.info("Deleted subscription {} after {} invalid-token failures", subscriptionId, failures);
                     }
-                    return sent;
+                    return new SendResult(sent, failed + 1);
                 }
             }
         }
         if (sent > 0) {
             subscriptions.resetTokenFailures(subscriptionId);
         }
-        return sent;
+        return new SendResult(sent, failed);
     }
 
     private PushResult send(String token, PushMessage message) {

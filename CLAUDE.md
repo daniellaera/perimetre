@@ -92,6 +92,15 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   scheduled run that finds it held logs a WARN and skips; `POST /admin/import` answers 409. Each run =
   import, then `NotificationDispatcher.dispatch(eventIds of that run)`. A dispatch failure is logged
   but does not fail the run (the import is committed; its notifications stay PENDING).
+  **Every run** (scheduled or `/admin/import`) inserts a RUNNING `job_run` row, then sets SUCCESS,
+  FAILED (import threw: nothing written, counters null, `error_message`) or DISPATCH_FAILED (import
+  committed, dispatch threw), and logs one INFO line `Job run <id> <job_name> (<trigger>) <status>:
+  fetched= changed= notified= pushes= fcm_errors= durationMs=`. `changed` = events detected (NEW +
+  GROUPE_CHANGE), not upserted rows (every re-fetched row is "updated"). RUNNING rows found at startup
+  (a restart mid-run) are marked FAILED. **Dead-man's switch** (`HealthcheckPinger`): with env
+  `HEALTHCHECK_PING_URL` (healthchecks.io), scheduled runs only POST `<url>/start`, then `<url>` on
+  SUCCESS or `<url>/fail` (summary as body); manual runs never ping. Unset/blank = no-op; a failed ping
+  is a WARN (without the URL) and never fails the run; 10 s timeouts.
   At startup `ScheduleReport` logs one `Scheduled … cron "…", next run …` line per registered cron task
   (read from the scheduler, next run in Europe/Zurich).
 - **HTTP:** `RestClient`, 60 s connect/read timeout, one retry on HTTP 5xx (SITG answers bad queries
@@ -100,7 +109,7 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
 - **Data facts (2026-10):** ~20.8k dossiers modified since 2025-01-01, ~1k/day. `date_maj_2` is
   date-only (midnight UTC) and lags about one day behind publication.
 
-## Data model (Flyway V1–V4)
+## Data model (Flyway V1–V5)
 
 - `dossier`: one row per SITG dossier (see "SITG import"); `dossier_geog_gist` on `(geom::geography)`.
 - `sync_state(source PK, last_run, bootstrapped)`: one row, `SIT_AUTOR_DOSSIER`.
@@ -114,6 +123,10 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   status PENDING|SENT|FAILED|SKIPPED, sent_at, error, fcm_message_id, UNIQUE(subscription_id, event_id))`.
   `fcm_message_id` (V4) is FCM's answer to a sent push (`projects/<id>/messages/<uuid>`; a summary
   push stamps all its rows with the same id); null for `LogPushSender` and failed pushes.
+- `job_run(id, job_name import-incremental|import-full, trigger SCHEDULED|MANUAL, started_at,
+  finished_at, status RUNNING|SUCCESS|FAILED|DISPATCH_FAILED, fetched, changed, notified, pushes,
+  fcm_errors, error_message)` (V5): one row per import run, see "Scheduling". `trigger` and `pushes` are
+  not in the original spec. Counters are null on FAILED.
 
 ## Notifications (`ch.perimetre.notification`)
 
@@ -152,7 +165,10 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
 
 - `POST /admin/import?mode=incremental|full` (default incremental): runs import + dispatch
   synchronously and returns `{mode, fetched, inserted, updated, events, notifications, pushes,
-  durationMs}`; 409 when an import is already running, 400 for an unknown mode.
+  durationMs}` plus `jobRunId` and `fcmErrors`; 409 when an import is already running, 400 for an
+  unknown mode. `mode=full` is also how to trigger the weekly full refresh by hand.
+- `GET /admin/job-runs?limit=20` (1–200): `job_run` rows newest first (`started_at DESC, id DESC`),
+  snake_case, plus `duration_ms`.
 - **`/admin/**` auth** (`ch.perimetre.admin`): a servlet filter on `/admin/*` wants
   `Authorization: Bearer <ADMIN_TOKEN>` (env var), else 401 + `WWW-Authenticate: Bearer`. Both sides are
   SHA-256-hashed, then `MessageDigest.isEqual` (constant time, length included). Profile `prod` refuses
@@ -309,12 +325,15 @@ Setup (Daniel, once; done for iOS; Android still needs steps 1 and 3):
 
 - Unit: `SitgMappingTest` (statut → groupe, flags), `ChangeDetectorTest` (event rules incl.
   bootstrap), `PushPlannerTest` (≤ 3 / > 3 summary rule), `PushMessagesTest` (payload wording, label
-  vocabulary, truncation), `AdminTokenFilterTest` (bearer check, prod requires a ≥ 32-char token).
+  vocabulary, truncation), `AdminTokenFilterTest` (bearer check, prod requires a ≥ 32-char token),
+  `HealthcheckPingerTest` (no-op when unset, ping URLs, a failing ping never throws),
+  `ScheduledZoneTest` (every cron `@Scheduled` names Europe/Zurich).
 - Context tests need the local DB running and apply pending Flyway migrations to it:
   `BackendApplicationTests`, and `PushPipelineIntegrationTest` (profile `dev`,
   `FIREBASE_CREDENTIALS` forced empty, `@Transactional` so everything is rolled back): subscription →
   `/admin/dev/emit` → notification SENT through `LogPushSender` (log captured) → `/events` feed;
-  category filtering; validation.
+  category filtering; validation. `ImportJobRunTest` (SitgImporter mocked): `job_run` row on success
+  and FAILED on exception, `/admin/job-runs` newest first.
 - App: `flutter analyze`; `integration_test/subscription_flow_test.dart` drives the real app on a
   simulator against the local backend (subscribe, simulated push tap → details sheet, unknown
   dossier message, deactivate): `cd app && flutter test integration_test -d "iPhone 17 Pro"`.
@@ -368,6 +387,9 @@ Setup (Daniel, once; done for iOS; Android still needs steps 1 and 3):
 - **Logs:** `ssh perimetre-prod 'docker logs -f --since 1h perimetre-backend-1'` (same for
   `perimetre-caddy-1`, `perimetre-db-1`); saved pre-deploy logs in `/opt/perimetre/logs/`; backups
   `ssh perimetre-prod 'journalctl -t perimetre-backup'`. Caddy keeps no access log.
+- **`HEALTHCHECK_PING_URL`** in `.env.prod`: present and empty (no pings) until Daniel creates the
+  healthchecks.io check (cron `15 3 * * *`, Europe/Zurich, grace ~1 h) and fills it in, then
+  `docker compose … up -d --force-recreate backend`. Sunday's 03:45 full run pings the same check.
 - **Admin calls:** `curl -fsS -X POST -H "Authorization: Bearer $ADMIN_TOKEN"
   'https://api.perimetre.ch/admin/import?mode=incremental'` (the token is in Daniel's Vaultwarden).
 - **Rotate `ADMIN_TOKEN`:** generates a new one on the box, recreates the backend (the old token dies

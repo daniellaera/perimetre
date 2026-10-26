@@ -45,7 +45,7 @@ services:
       db:
         condition: service_healthy
     # SPRING_PROFILES_ACTIVE, DB_URL, DB_USER, DB_PASSWORD, FIREBASE_CREDENTIALS,
-    # ADMIN_TOKEN. application-prod.yml has no defaults, so a missing one fails
+    # ADMIN_TOKEN, and the optional HEALTHCHECK_PING_URL (empty = no pings). application-prod.yml has no defaults, so a missing one fails
     # the startup; AdminSecurityConfig refuses an ADMIN_TOKEN under 32 chars.
     env_file: .env.prod
     environment:
