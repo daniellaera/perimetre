@@ -362,13 +362,16 @@ class DossierSheet extends StatelessWidget {
 }
 
 class DossierRow extends StatelessWidget {
-  const DossierRow(this.dossier, {super.key, required this.onTap, this.event});
+  const DossierRow(this.dossier, {super.key, required this.onTap, this.event, this.place});
 
   final Dossier dossier;
   final ValueChanged<Dossier> onTap;
 
   /// When set (subscription feed), the event text leads the row and sets the marker colour.
   final DossierEvent? event;
+
+  /// Name(s) of the matched perimeter(s), appended to the event line (feeds of several perimeters).
+  final String? place;
 
   @override
   Widget build(BuildContext context) {
@@ -388,7 +391,7 @@ class DossierRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${eventText(e.newGroupe)} · ${formatDate(e.occurredAt)}',
+                  '${eventText(e.newGroupe)} · ${formatDate(e.occurredAt)}${place == null ? '' : ' · $place'}',
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(color: groupeColor(e.newGroupe)),
                 ),
                 Text(truncate(d.title, 90)),

@@ -21,36 +21,40 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * No authentication: the device keeps the subscription id (a random UUID) and that is the only handle.
+ * The single-subscription API of the first app build (2026-10), kept until every installed app uses
+ * /devices. Each legacy subscription lives on its own device with the same id; the request's push token is
+ * the device's. No authentication: the device keeps the subscription id (a random UUID), the only handle.
  */
 @RestController
-class SubscriptionController {
+class LegacySubscriptionController {
 
+    private final SubscriptionService service;
     private final SubscriptionRepository subscriptions;
 
-    SubscriptionController(SubscriptionRepository subscriptions) {
+    LegacySubscriptionController(SubscriptionService service, SubscriptionRepository subscriptions) {
+        this.service = service;
         this.subscriptions = subscriptions;
     }
 
     @PostMapping("/subscriptions")
-    ResponseEntity<SubscriptionView> create(@Valid @RequestBody SubscriptionRequest request) {
-        SubscriptionView created = subscriptions.create(request);
+    ResponseEntity<LegacySubscriptionView> create(@Valid @RequestBody LegacySubscriptionRequest request) {
+        LegacySubscriptionView created = service.createLegacy(request);
         return ResponseEntity.created(URI.create("/subscriptions/" + created.id())).body(created);
     }
 
     @GetMapping("/subscriptions/{id}")
-    SubscriptionView get(@PathVariable UUID id) {
-        return subscriptions.find(id).orElseThrow(SubscriptionController::notFound);
+    LegacySubscriptionView get(@PathVariable UUID id) {
+        return subscriptions.findLegacy(id).orElseThrow(LegacySubscriptionController::notFound);
     }
 
     @PutMapping("/subscriptions/{id}")
-    SubscriptionView update(@PathVariable UUID id, @Valid @RequestBody SubscriptionRequest request) {
-        return subscriptions.update(id, request).orElseThrow(SubscriptionController::notFound);
+    LegacySubscriptionView update(@PathVariable UUID id, @Valid @RequestBody LegacySubscriptionRequest request) {
+        return service.updateLegacy(id, request).orElseThrow(LegacySubscriptionController::notFound);
     }
 
     @DeleteMapping("/subscriptions/{id}")
     ResponseEntity<Void> delete(@PathVariable UUID id) {
-        if (!subscriptions.delete(id)) {
+        if (!service.deleteLegacy(id)) {
             throw notFound();
         }
         return ResponseEntity.noContent().build();
@@ -59,7 +63,7 @@ class SubscriptionController {
     @GetMapping("/subscriptions/{id}/events")
     List<SubscriptionEventView> events(@PathVariable UUID id,
             @RequestParam(defaultValue = "50") @Min(1) @Max(200) int limit) {
-        if (subscriptions.find(id).isEmpty()) {
+        if (subscriptions.deviceOf(id).isEmpty()) {
             throw notFound();
         }
         return subscriptions.events(id, limit);

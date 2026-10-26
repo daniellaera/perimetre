@@ -15,7 +15,7 @@ import ch.perimetre.dossier.Groupe;
 import ch.perimetre.event.EventKind;
 import ch.perimetre.event.EventRepository;
 import ch.perimetre.event.NewEvent;
-import ch.perimetre.subscription.SubscriptionRequest;
+import ch.perimetre.subscription.Categories;
 
 /**
  * Dev profile only (never together with prod): fabricates an event for an existing dossier and dispatches it, to exercise the push
@@ -57,13 +57,13 @@ class DevEmitController {
     private static Groupe parseGroupe(String value) {
         try {
             Groupe groupe = Groupe.valueOf(value.trim().toUpperCase(Locale.ROOT));
-            if (SubscriptionRequest.NOTIFIABLE.contains(groupe)) {
+            if (Categories.NOTIFIABLE.contains(groupe)) {
                 return groupe;
             }
         } catch (IllegalArgumentException e) {
             // fall through
         }
         throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                "new_groupe must be one of " + SubscriptionRequest.NOTIFIABLE);
+                "new_groupe must be one of " + Categories.NOTIFIABLE);
     }
 }

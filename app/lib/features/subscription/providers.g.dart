@@ -60,49 +60,50 @@ final class SharedPreferencesProvider
 
 String _$sharedPreferencesHash() => r'70ef90bd70df9f89260fca9b542d9f8d25d8e3cb';
 
-/// The device's subscription. Its id (the only handle on it: there is no account) lives in shared_preferences.
+/// The device's subscriptions (perimeters), oldest first. Empty until the first one is added.
 
-@ProviderFor(MySubscription)
-final mySubscriptionProvider = MySubscriptionProvider._();
+@ProviderFor(MySubscriptions)
+final mySubscriptionsProvider = MySubscriptionsProvider._();
 
-/// The device's subscription. Its id (the only handle on it: there is no account) lives in shared_preferences.
-final class MySubscriptionProvider
-    extends $AsyncNotifierProvider<MySubscription, Subscription?> {
-  /// The device's subscription. Its id (the only handle on it: there is no account) lives in shared_preferences.
-  MySubscriptionProvider._()
+/// The device's subscriptions (perimeters), oldest first. Empty until the first one is added.
+final class MySubscriptionsProvider
+    extends $AsyncNotifierProvider<MySubscriptions, List<Subscription>> {
+  /// The device's subscriptions (perimeters), oldest first. Empty until the first one is added.
+  MySubscriptionsProvider._()
     : super(
         from: null,
         argument: null,
         retry: null,
-        name: r'mySubscriptionProvider',
+        name: r'mySubscriptionsProvider',
         isAutoDispose: false,
         dependencies: null,
         $allTransitiveDependencies: null,
       );
 
   @override
-  String debugGetCreateSourceHash() => _$mySubscriptionHash();
+  String debugGetCreateSourceHash() => _$mySubscriptionsHash();
 
   @$internal
   @override
-  MySubscription create() => MySubscription();
+  MySubscriptions create() => MySubscriptions();
 }
 
-String _$mySubscriptionHash() => r'53e6b970f3d514d069adb314944ccdc2467b90bc';
+String _$mySubscriptionsHash() => r'1dbb2a8401e9479a102e310f01a00d95434d5ff2';
 
-/// The device's subscription. Its id (the only handle on it: there is no account) lives in shared_preferences.
+/// The device's subscriptions (perimeters), oldest first. Empty until the first one is added.
 
-abstract class _$MySubscription extends $AsyncNotifier<Subscription?> {
-  FutureOr<Subscription?> build();
+abstract class _$MySubscriptions extends $AsyncNotifier<List<Subscription>> {
+  FutureOr<List<Subscription>> build();
   @$mustCallSuper
   @override
   WhenComplete runBuild() {
-    final ref = this.ref as $Ref<AsyncValue<Subscription?>, Subscription?>;
+    final ref =
+        this.ref as $Ref<AsyncValue<List<Subscription>>, List<Subscription>>;
     final element =
         ref.element
             as $ClassProviderElement<
-              AnyNotifier<AsyncValue<Subscription?>, Subscription?>,
-              AsyncValue<Subscription?>,
+              AnyNotifier<AsyncValue<List<Subscription>>, List<Subscription>>,
+              AsyncValue<List<Subscription>>,
               Object?,
               Object?
             >;
@@ -110,12 +111,12 @@ abstract class _$MySubscription extends $AsyncNotifier<Subscription?> {
   }
 }
 
-/// Recent events in the subscription's perimeter, newest first.
+/// Recent events matching any of the device's subscriptions, once each, newest first.
 
 @ProviderFor(recentEvents)
 final recentEventsProvider = RecentEventsProvider._();
 
-/// Recent events in the subscription's perimeter, newest first.
+/// Recent events matching any of the device's subscriptions, once each, newest first.
 
 final class RecentEventsProvider
     extends
@@ -127,7 +128,7 @@ final class RecentEventsProvider
     with
         $FutureModifier<List<DossierEvent>>,
         $FutureProvider<List<DossierEvent>> {
-  /// Recent events in the subscription's perimeter, newest first.
+  /// Recent events matching any of the device's subscriptions, once each, newest first.
   RecentEventsProvider._()
     : super(
         from: null,
@@ -154,4 +155,4 @@ final class RecentEventsProvider
   }
 }
 
-String _$recentEventsHash() => r'8aebc0b75810cd981c5ee92f8ca34133f91d530e';
+String _$recentEventsHash() => r'c850bb69fe9173531294ec1bc5c1457952ee077c';

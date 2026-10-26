@@ -9,7 +9,7 @@ import '../explore/providers.dart';
 import '../explore/widgets.dart';
 import '../subscription/providers.dart';
 
-/// Bottom navigation (Explorer / Mon périmètre) and handling of tapped pushes.
+/// Bottom navigation (Explorer / Mes périmètres) and handling of tapped pushes.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key, required this.shell});
 
@@ -40,7 +40,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     super.dispose();
   }
 
-  /// Shows the "Mon périmètre" tab, refreshes its feed and, for a single-event push, opens the dossier.
+  /// Shows the "Mes périmètres" tab, refreshes its feed and, for a single-event push, opens the dossier.
   Future<void> _onPushOpened(Map<String, dynamic> data) async {
     if (!mounted) return;
     widget.shell.goBranch(HomeShell._perimetreBranch);
@@ -50,10 +50,20 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final subscription = await ref.read(mySubscriptionProvider.future);
-      final dossier = subscription == null
+      final subscriptions = await ref.read(mySubscriptionsProvider.future);
+      final deviceId = ref.read(mySubscriptionsProvider.notifier).deviceId;
+      // The push names the nearest matching subscription (pushes of the single-subscription backend do not).
+      final subscriptionId = data['subscription_id'];
+      final subscription =
+          subscriptions.where((s) => s.id == subscriptionId).firstOrNull ?? subscriptions.firstOrNull;
+      final dossier = deviceId == null
           ? null
-          : await findPushedDossier(ref.read(perimetreApiProvider), subscription, idDossier);
+          : await findPushedDossier(
+              ref.read(perimetreApiProvider),
+              deviceId: deviceId,
+              subscription: subscription,
+              idDossier: idDossier,
+            );
       if (!mounted) return;
       if (dossier == null) {
         messenger.showSnackBar(const SnackBar(content: Text('Ce dossier n\'est plus disponible.')));
@@ -78,7 +88,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           NavigationDestination(
             icon: Icon(Icons.notifications_outlined),
             selectedIcon: Icon(Icons.notifications),
-            label: 'Mon périmètre',
+            label: 'Mes périmètres',
           ),
         ],
       ),

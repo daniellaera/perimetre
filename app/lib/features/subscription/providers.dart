@@ -15,82 +15,97 @@ part 'providers.g.dart';
 @Riverpod(keepAlive: true)
 SharedPreferences sharedPreferences(Ref ref) => throw UnimplementedError('sharedPreferencesProvider must be overridden');
 
-/// Thrown by [MySubscription.save] when the user refuses notifications.
+/// Thrown by [MySubscriptions.add] and [MySubscriptions.edit] when the user refuses notifications.
 class NotificationsDeniedException implements Exception {
   const NotificationsDeniedException();
 }
 
-/// The device's subscription. Its id (the only handle on it: there is no account) lives in shared_preferences.
-@Riverpod(keepAlive: true)
-class MySubscription extends _$MySubscription {
-  static const _idKey = 'subscription_id';
+/// Keys in shared_preferences. The device id is the only handle on the device's subscriptions (no account).
+const deviceIdKey = 'device_id';
 
+/// The single-subscription app build stored its subscription id here. The backend gave that subscription a
+/// device with the same id, so it is adopted as the device id.
+const legacySubscriptionIdKey = 'subscription_id';
+
+/// The device's subscriptions (perimeters), oldest first. Empty until the first one is added.
+@Riverpod(keepAlive: true)
+class MySubscriptions extends _$MySubscriptions {
   SharedPreferences get _prefs => ref.read(sharedPreferencesProvider);
   PerimetreApi get _api => ref.read(perimetreApiProvider);
   PushService get _push => ref.read(pushServiceProvider);
 
+  /// Null until the first subscription is added (or after the backend forgot the device).
+  String? get deviceId => _prefs.getString(deviceIdKey);
+
   @override
-  Future<Subscription?> build() async {
+  Future<List<Subscription>> build() async {
     final tokenRefresh = _push.onTokenRefresh.listen(_onTokenRefresh);
     ref.onDispose(tokenRefresh.cancel);
 
-    final id = _prefs.getString(_idKey);
-    if (id == null) return null;
-    final subscription = await _api.subscription(id);
+    await _adoptLegacySubscription();
+    final id = deviceId;
+    if (id == null) return const [];
+    final subscriptions = await _api.subscriptions(id);
     // Deleted server-side (e.g. after repeated invalid tokens): forget it. Network errors keep the id.
-    if (subscription == null) await _prefs.remove(_idKey);
-    return subscription;
+    if (subscriptions == null) await _prefs.remove(deviceIdKey);
+    return subscriptions ?? const [];
   }
 
-  /// Asks for notification permission, gets the push token, then creates or updates the subscription.
-  Future<void> save({
-    required AddressSuggestion address,
-    required int radiusM,
-    required List<Groupe> categories,
-  }) async {
+  Future<void> _adoptLegacySubscription() async {
+    final legacyId = _prefs.getString(legacySubscriptionIdKey);
+    if (legacyId == null) return;
+    if (deviceId == null) await _prefs.setString(deviceIdKey, legacyId);
+    await _prefs.remove(legacySubscriptionIdKey);
+  }
+
+  /// Asks for notification permission, registers the device (or refreshes its push token), then creates the
+  /// subscription. Throws [SubscriptionLimitException] at the backend's cap.
+  Future<Subscription> add(SubscriptionInput input) async {
+    final device = await _ensureDevice();
+    final created = await _api.createSubscription(device, input);
+    state = AsyncData([...?state.value, created]);
+    return created;
+  }
+
+  /// Replaces every field. Recreates the subscription if the backend no longer has it.
+  Future<Subscription> edit(String id, SubscriptionInput input) async {
+    final device = await _ensureDevice();
+    final saved = await _api.updateSubscription(device, id, input) ?? await _api.createSubscription(device, input);
+    state = AsyncData([
+      for (final s in state.value ?? const <Subscription>[]) s.id == id ? saved : s,
+    ]);
+    return saved;
+  }
+
+  Future<void> remove(String id) async {
+    final device = deviceId;
+    if (device != null) await _api.deleteSubscription(device, id);
+    state = AsyncData([
+      for (final s in state.value ?? const <Subscription>[])
+        if (s.id != id) s,
+    ]);
+  }
+
+  /// The device id, after sending the current push token: a new device when there is none yet or the
+  /// backend no longer has it (its subscriptions are then gone too).
+  Future<String> _ensureDevice() async {
     if (!await _push.requestPermission()) throw const NotificationsDeniedException();
-    final input = SubscriptionInput(
-      pushToken: await _push.getToken(),
-      platform: _push.platform,
-      lat: address.lat,
-      lng: address.lon,
-      radiusM: radiusM,
-      categories: categories,
-      label: address.label,
-    );
-    final current = state.value;
-    // An update can find the subscription gone (deleted server-side): create a new one then.
-    final saved = (current == null ? null : await _api.updateSubscription(current.id, input)) ??
-        await _api.createSubscription(input);
-    await _prefs.setString(_idKey, saved.id);
-    state = AsyncData(saved);
-  }
-
-  Future<void> deactivate() async {
-    final current = state.value;
-    if (current == null) return;
-    await _api.deleteSubscription(current.id);
-    await _prefs.remove(_idKey);
-    state = const AsyncData(null);
+    final token = await _push.getToken();
+    final current = deviceId;
+    if (current != null && await _api.updateDevice(current, pushToken: token, platform: _push.platform) != null) {
+      return current;
+    }
+    final created = await _api.createDevice(pushToken: token, platform: _push.platform);
+    await _prefs.setString(deviceIdKey, created.id);
+    if (current != null) state = const AsyncData([]);
+    return created.id;
   }
 
   Future<void> _onTokenRefresh(String token) async {
-    final current = state.value;
-    if (current == null) return;
+    final id = deviceId;
+    if (id == null) return;
     try {
-      final updated = await _api.updateSubscription(
-        current.id,
-        SubscriptionInput(
-          pushToken: token,
-          platform: _push.platform,
-          lat: current.lat,
-          lng: current.lng,
-          radiusM: current.radiusM,
-          categories: current.categories,
-          label: current.label,
-        ),
-      );
-      if (updated != null) state = AsyncData(updated);
+      await _api.updateDevice(id, pushToken: token, platform: _push.platform);
     } catch (e) {
       // Retried on the next refresh or the next save; the old token keeps working for a while.
       debugPrint('Push token refresh not sent to the backend: $e');
@@ -98,22 +113,30 @@ class MySubscription extends _$MySubscription {
   }
 }
 
-/// Recent events in the subscription's perimeter, newest first.
+/// Recent events matching any of the device's subscriptions, once each, newest first.
 @riverpod
 Future<List<DossierEvent>> recentEvents(Ref ref) async {
-  final subscription = await ref.watch(mySubscriptionProvider.future);
-  if (subscription == null) return const [];
-  return ref.watch(perimetreApiProvider).subscriptionEvents(subscription.id);
+  final subscriptions = await ref.watch(mySubscriptionsProvider.future);
+  final deviceId = ref.read(mySubscriptionsProvider.notifier).deviceId;
+  if (subscriptions.isEmpty || deviceId == null) return const [];
+  return ref.watch(perimetreApiProvider).deviceEvents(deviceId);
 }
 
-/// Finds the dossier of a tapped push around the subscription point: /dossiers first, then the event feed,
+/// Finds the dossier of a tapped push: /dossiers around [subscription] first, then the device's event feed,
 /// since /dossiers is capped at 200 results and hides TERMINE dossiers. Null when not found.
-Future<Dossier?> findPushedDossier(PerimetreApi api, Subscription subscription, String idDossier) async {
-  final around = await api.dossiers(lat: subscription.lat, lng: subscription.lng, radius: subscription.radiusM);
-  for (final d in around) {
-    if (d.idDossier == idDossier) return d;
+Future<Dossier?> findPushedDossier(
+  PerimetreApi api, {
+  required String deviceId,
+  required Subscription? subscription,
+  required String idDossier,
+}) async {
+  if (subscription != null) {
+    final around = await api.dossiers(lat: subscription.lat, lng: subscription.lng, radius: subscription.radiusM);
+    for (final d in around) {
+      if (d.idDossier == idDossier) return d;
+    }
   }
-  final events = await api.subscriptionEvents(subscription.id);
+  final events = await api.deviceEvents(deviceId, limit: 200);
   for (final e in events) {
     if (e.dossier.idDossier == idDossier) return e.dossier;
   }

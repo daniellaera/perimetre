@@ -10,6 +10,17 @@ const apiBaseUrl = String.fromEnvironment(
   defaultValue: kReleaseMode ? 'https://api.perimetre.ch' : 'http://localhost:8090',
 );
 
+/// The device already has the backend's maximum number of subscriptions (409 SUBSCRIPTION_LIMIT_REACHED).
+class SubscriptionLimitException implements Exception {
+  const SubscriptionLimitException(this.message);
+
+  /// French, ready to show.
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class PerimetreApi {
   PerimetreApi(this._dio);
 
@@ -31,39 +42,76 @@ class PerimetreApi {
         .toList();
   }
 
-  Future<Subscription> createSubscription(SubscriptionInput input) async {
-    final response = await _dio.post<Map<String, dynamic>>('/subscriptions', data: input.toJson());
-    return Subscription.fromJson(response.data!);
+  Future<Device> createDevice({required String pushToken, required String platform}) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/devices',
+      data: {'push_token': pushToken, 'platform': platform},
+    );
+    return Device.fromJson(response.data!);
   }
 
-  /// Null when the subscription no longer exists (e.g. deleted after repeated invalid push tokens).
-  Future<Subscription?> subscription(String id) =>
-      _orNullOn404(() => _dio.get<Map<String, dynamic>>('/subscriptions/$id'));
+  /// New push token. Null when the device no longer exists (deleted after repeated invalid tokens).
+  Future<Device?> updateDevice(String id, {required String pushToken, required String platform}) => _orNullOn404(
+    () => _dio.put<Map<String, dynamic>>('/devices/$id', data: {'push_token': pushToken, 'platform': platform}),
+    Device.fromJson,
+  );
+
+  /// Null when the device no longer exists.
+  Future<List<Subscription>?> subscriptions(String deviceId) async {
+    try {
+      final response = await _dio.get<List<dynamic>>('/devices/$deviceId/subscriptions');
+      return (response.data ?? const [])
+          .map((json) => Subscription.fromJson(json as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// Throws [SubscriptionLimitException] at the per-device cap.
+  Future<Subscription> createSubscription(String deviceId, SubscriptionInput input) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>('/devices/$deviceId/subscriptions', data: input.toJson());
+      return Subscription.fromJson(response.data!);
+    } on DioException catch (e) {
+      final body = e.response?.data;
+      if (e.response?.statusCode == 409 && body is Map && body['code'] == 'SUBSCRIPTION_LIMIT_REACHED') {
+        throw SubscriptionLimitException(body['detail'] as String? ?? 'Nombre maximum de périmètres atteint.');
+      }
+      rethrow;
+    }
+  }
 
   /// Null when the subscription no longer exists.
-  Future<Subscription?> updateSubscription(String id, SubscriptionInput input) =>
-      _orNullOn404(() => _dio.put<Map<String, dynamic>>('/subscriptions/$id', data: input.toJson()));
+  Future<Subscription?> updateSubscription(String deviceId, String id, SubscriptionInput input) => _orNullOn404(
+    () => _dio.put<Map<String, dynamic>>('/devices/$deviceId/subscriptions/$id', data: input.toJson()),
+    Subscription.fromJson,
+  );
 
   /// Succeeds when the subscription is already gone.
-  Future<void> deleteSubscription(String id) async {
+  Future<void> deleteSubscription(String deviceId, String id) async {
     try {
-      await _dio.delete<void>('/subscriptions/$id');
+      await _dio.delete<void>('/devices/$deviceId/subscriptions/$id');
     } on DioException catch (e) {
       if (e.response?.statusCode != 404) rethrow;
     }
   }
 
-  /// Events in the subscription's perimeter, newest first.
-  Future<List<DossierEvent>> subscriptionEvents(String id, {int limit = 50}) async {
-    final response = await _dio.get<List<dynamic>>('/subscriptions/$id/events', queryParameters: {'limit': limit});
+  /// Events matching any of the device's subscriptions, once each, newest first.
+  Future<List<DossierEvent>> deviceEvents(String deviceId, {int limit = 50}) async {
+    final response = await _dio.get<List<dynamic>>('/devices/$deviceId/events', queryParameters: {'limit': limit});
     return (response.data ?? const [])
         .map((json) => DossierEvent.fromJson(json as Map<String, dynamic>))
         .toList();
   }
 
-  Future<Subscription?> _orNullOn404(Future<Response<Map<String, dynamic>>> Function() request) async {
+  Future<T?> _orNullOn404<T>(
+    Future<Response<Map<String, dynamic>>> Function() request,
+    T Function(Map<String, dynamic>) fromJson,
+  ) async {
     try {
-      return Subscription.fromJson((await request()).data!);
+      return fromJson((await request()).data!);
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) return null;
       rethrow;
