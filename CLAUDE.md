@@ -399,9 +399,12 @@ Setup (Daniel, once; done for iOS; Android still needs steps 1 and 3):
 - **Logs:** `ssh perimetre-prod 'docker logs -f --since 1h perimetre-backend-1'` (same for
   `perimetre-caddy-1`, `perimetre-db-1`); saved pre-deploy logs in `/opt/perimetre/logs/`; backups
   `ssh perimetre-prod 'journalctl -t perimetre-backup'`. Caddy keeps no access log.
-- **`HEALTHCHECK_PING_URL`** in `.env.prod`: present and empty (no pings) until Daniel creates the
-  healthchecks.io check (cron `15 3 * * *`, Europe/Zurich, grace ~1 h) and fills it in, then
-  `docker compose … up -d --force-recreate backend`. Sunday's 03:45 full run pings the same check.
+- **`HEALTHCHECK_PING_URL`** in `.env.prod`: set 2026-10-26 to Daniel's healthchecks.io check (the
+  URL is in `.env.prod` only; check schedule `15 3 * * *` Europe/Zurich). Changing it: edit `.env.prod`,
+  then `docker compose … up -d --force-recreate backend`. Sunday's 03:45 full run pings the same check.
+- **FCM verified on prod 2026-10-26:** `POST /admin/test-push` to the simulator's subscription →
+  `projects/perimetre-901ec/messages/ee42f076-aa9c-40af-bcca-9ecf590463fd`, shown on the iPhone 17 Pro
+  simulator.
 - **Admin calls:** `curl -fsS -X POST -H "Authorization: Bearer $ADMIN_TOKEN"
   'https://api.perimetre.ch/admin/import?mode=incremental'` (the token is in Daniel's Vaultwarden).
 - **Rotate `ADMIN_TOKEN`:** generates a new one on the box, recreates the backend (the old token dies
