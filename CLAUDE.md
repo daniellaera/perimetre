@@ -370,9 +370,17 @@ integration_test/subscription_flow_test.dart   simulator E2E against the local b
   opens its details sheet, falling back to the device feed (`/dossiers` is capped at 200 and hides
   TERMINE), else a SnackBar "Ce dossier n'est plus disponible.". Summary pushes only open the tab.
 - **Token refresh:** `onTokenRefresh` → `PUT /devices/{id}` with the new token.
-- **iOS push setup in the repo:** `Runner/Runner.entitlements` (`aps-environment = development`,
-  referenced by `CODE_SIGN_ENTITLEMENTS` in all three Runner configurations) and `UIBackgroundModes`
-  `remote-notification` in `Info.plist`.
+- **iOS push setup in the repo:** `Runner/Runner.entitlements` (`aps-environment = development`, Debug
+  and Profile) and `Runner/RunnerRelease.entitlements` (`production`, Release), via `CODE_SIGN_ENTITLEMENTS`;
+  `UIBackgroundModes` `remote-notification` in `Info.plist`.
+- **Release / TestFlight** (checklist and store texts: `docs/app-store.md`): version from `pubspec.yaml`
+  (`1.0.0+1`; bump the build number for every upload), iPhone only, `CFBundleDevelopmentRegion fr`,
+  `ITSAppUsesNonExemptEncryption NO`, `Runner/PrivacyInfo.xcprivacy` (precise location, other user content,
+  device ID: app functionality, linked, no tracking; UserDefaults CA92.1). It must stay in line with the App
+  Store privacy answers and `deploy/site/privacy.html`. No usage strings (no device location; iOS has
+  none for notifications). Icon and launch image are a placeholder from `app/tool/make_icon.swift`.
+  `flutter build ipa --release` archives and exports, signed Apple Distribution (verified 2026-10-26;
+  Xcode created the managed store profile). Nothing uploaded yet.
 
 ### Firebase
 
