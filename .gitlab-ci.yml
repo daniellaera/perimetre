@@ -1,22 +1,77 @@
-# Périmètre — CI: builds and pushes the backend image, never deploys.
+# Périmètre — CI: tests merge requests, builds and pushes the backend image, never deploys.
 #
 # Deployment stays manual (deploy/ship.sh, or the `ship` skill), like DealJE.
-# On every push to main: registry.gitlab.com/daniellaera1/perimetre/backend
-# tagged :<short-sha> and :latest. Other branches run nothing.
+# Merge requests: backend tests (unit + context tests against a PostGIS service)
+# and `flutter analyze`. On every push to main: the same checks, then
+# registry.gitlab.com/daniellaera1/perimetre/backend tagged :<short-sha> and :latest.
+# Other branches without an MR run nothing.
 #
 # Shared (instance) runners: the homelab runner is a DealJE project runner,
-# not available here. The image build needs no database: the tests run on the
-# Mac against the local PostGIS before a push (see CLAUDE.md, "Tests").
+# not available here.
 
 stages:
+  - test
   - build
 
 workflow:
   rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+backend-test:
+  stage: test
+  # Same JDK as the image's build stage (backend/Dockerfile); the Gradle toolchain wants Temurin 21.
+  image: eclipse-temurin:21.0.12.1_1-jdk-jammy@sha256:742daacb9316be4b6fc60258f6e4ac2a11882f6c597373c92290a57bfad0d2e0
+  services:
+    # Same PostGIS as docker-compose.yml and prod; the context tests migrate it with Flyway.
+    - name: imresamu/postgis:17-3.5
+      alias: postgis
+  variables:
+    POSTGRES_DB: perimetre
+    POSTGRES_USER: perimetre
+    POSTGRES_PASSWORD: perimetre
+    DB_URL: jdbc:postgresql://postgis:5432/perimetre
+    GRADLE_USER_HOME: $CI_PROJECT_DIR/.gradle-home
+  cache:
+    key: gradle-$CI_JOB_NAME
+    paths:
+      - .gradle-home/caches
+      - .gradle-home/wrapper
+  script:
+    - cd backend
+    - ./gradlew --no-daemon test
+  artifacts:
+    when: always
+    reports:
+      junit: backend/build/test-results/test/*.xml
+  interruptible: true
+
+app-analyze:
+  stage: test
+  # cirruslabs/flutter has no 3.47 tag yet: its image brings the Linux dependencies, and the SDK is
+  # checked out at the version used locally (CLAUDE.md, "App").
+  image: ghcr.io/cirruslabs/flutter:stable
+  variables:
+    FLUTTER_VERSION: "3.47.7"
+    FLUTTER_SDK: $CI_PROJECT_DIR/.flutter-sdk
+  cache:
+    key: flutter-$FLUTTER_VERSION
+    paths:
+      - .flutter-sdk
+  script:
+    - '[ -x "$FLUTTER_SDK/bin/flutter" ] || git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$FLUTTER_SDK"'
+    - export PATH="$FLUTTER_SDK/bin:$PATH"
+    - flutter --version
+    - cd app
+    - flutter pub get
+    - flutter analyze
+    - '[ ! -d test ] || flutter test'
+  interruptible: true
 
 backend-image:
   stage: build
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   image: docker:27
   services:
     - name: docker:27-dind

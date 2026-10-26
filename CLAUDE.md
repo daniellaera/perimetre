@@ -406,8 +406,11 @@ Setup (Daniel, once; done for iOS; Android still needs steps 1 and 3):
   no defaults (unset = startup fails), Hikari pool 5, actuator exposes `health` only with
   `show-details: never` and no discovery page, scheduler on, `/admin/dev/**` absent, `/admin/**`
   behind `ADMIN_TOKEN` (see "API").
-- **Images:** `.gitlab-ci.yml` builds `backend/Dockerfile` on every push to main (shared runners; the
-  homelab runner is a DealJE project runner) and pushes
+- **CI** (`.gitlab-ci.yml`, shared runners; the homelab runner is a DealJE project runner): merge
+  requests and main run `backend-test` (`./gradlew test` against a PostGIS service, `DB_URL` pointed at
+  it) and `app-analyze` (Flutter 3.47.7 checked out in the job, `flutter analyze`, `flutter test` when
+  `app/test` exists). Merge only with a green MR pipeline.
+- **Images:** after the tests, every push to main builds `backend/Dockerfile` and pushes
   `registry.gitlab.com/daniellaera1/perimetre/backend:<short-sha>` and `:latest`, labelled with
   `org.opencontainers.image.revision`. CI never deploys. The box is meant to pull with a GitLab deploy
   token (`read_registry`), logged in once as `ubuntu` (`~/.docker/config.json`). **Not set up yet
