@@ -126,6 +126,36 @@ class PushPipelineIntegrationTest {
     }
 
     @Test
+    void testPushSendsToTheStoredTokenAndWritesNothing(CapturedOutput output) throws Exception {
+        // Updated "in 2030": first in the /dossiers order whatever else the local DB holds nearby.
+        dossiers.upsert(List.of(new Dossier(DOSSIER_ID, "APA", "--", "Non renseigné", "pose d'une pergola ",
+                "ACCEPTE", Groupe.AUTORISE, LocalDate.of(2026, 10, 1),
+                OffsetDateTime.of(2030, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC), null, 6.1425, 46.1944, List.of())));
+        String created = mvc.perform(post("/subscriptions").contentType(MediaType.APPLICATION_JSON).content("""
+                        {"push_token": "dev-token-test-push", "platform": "ios", "lat": 46.1934, "lng": 6.1425,
+                         "radius_m": 300}
+                        """))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID subscriptionId = UUID.fromString(JsonPath.read(created, "$.id"));
+        long events = jdbc.sql("SELECT count(*) FROM event").query(Long.class).single();
+
+        mvc.perform(post("/admin/test-push").param("subscription_id", subscriptionId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SENT"))
+                .andExpect(jsonPath("$.idDossier").value(DOSSIER_ID))
+                .andExpect(jsonPath("$.title").value("Pose d'une pergola à 111 m"))
+                .andExpect(jsonPath("$.body").value("Autorisation délivrée. Pose d'une pergola"));
+
+        assertThat(output).contains("PUSH (log only) token=dev-token-test-push");
+        assertThat(jdbc.sql("SELECT count(*) FROM event").query(Long.class).single()).isEqualTo(events);
+        assertThat(jdbc.sql("SELECT count(*) FROM notification WHERE subscription_id = ?")
+                .param(subscriptionId).query(Long.class).single()).isZero();
+        mvc.perform(post("/admin/test-push").param("subscription_id", UUID.randomUUID().toString()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void invalidSubscriptionsAreRejected() throws Exception {
         String[] bodies = {
                 // outside Geneva (Lausanne)

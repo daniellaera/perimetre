@@ -167,6 +167,13 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   synchronously and returns `{mode, fetched, inserted, updated, events, notifications, pushes,
   durationMs}` plus `jobRunId` and `fcmErrors`; 409 when an import is already running, 400 for an
   unknown mode. `mode=full` is also how to trigger the weekly full refresh by hand.
+- `POST /admin/test-push?subscription_id=<uuid>` (all profiles, behind `ADMIN_TOKEN`): one real push
+  to that subscription's stored token through the active `PushSender` (FCM on prod), built by
+  `PushMessages.forEvent` for the dossier its `/dossiers` list shows first within its radius and
+  categories (as if just reaching its current groupe, so a tap opens the details sheet). Writes nothing
+  (no event, no notification row; an invalid token is reported, not counted). Returns `{subscriptionId,
+  idDossier, title, body, status, fcmMessageId, error}`; 404 for an unknown subscription or an empty
+  radius. The way to check FCM on prod without waiting for 03:15.
 - `GET /admin/job-runs?limit=20` (1–200): `job_run` rows newest first (`started_at DESC, id DESC`),
   snake_case, plus `duration_ms`.
 - **`/admin/**` auth** (`ch.perimetre.admin`): a servlet filter on `/admin/*` wants
