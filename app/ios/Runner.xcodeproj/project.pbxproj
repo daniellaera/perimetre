@@ -160,6 +160,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 97C147051CF9000F007C117D /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
+				A1B2C3D4E5F60718293A4B60 /* Check Mapbox token */,
 				9740EEB61CF901F6004384FC /* Run Script */,
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
@@ -245,6 +246,21 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		A1B2C3D4E5F60718293A4B60 /* Check Mapbox token */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Check Mapbox token";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Release builds must carry the Mapbox token (app/lib/map/map_tiles.dart): flutter passes the dart-defines here.\n[ \"$CONFIGURATION\" = \"Release\" ] || exit 0\nfor define in $(echo \"$DART_DEFINES\" | tr ',' ' '); do\n  case \"$(echo \"$define\" | base64 --decode 2>/dev/null)\" in\n    MAPBOX_ACCESS_TOKEN=pk.?*) exit 0 ;;\n  esac\ndone\necho \"error: Release build without a Mapbox token. Build with --dart-define-from-file=config/prod.json (a copy of config/example.json holding the production pk. token, see README).\"\nexit 1\n";
+		};
 		3B06AD1E1E4923F5004D2608 /* Thin Binary */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

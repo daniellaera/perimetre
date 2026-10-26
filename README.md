@@ -41,7 +41,7 @@ the dev endpoint. The app is in French.)*
   *Mes périmètres*. iOS is the primary target; Android compiles but has no push configuration yet.
 - `deploy/`: the production setup, which is Docker Compose with Caddy, the backend and PostGIS on a single small VPS,
   plus bootstrap, deploy and backup scripts.
-- `docs/`: map-tile provider evaluation, App Store checklist, screenshots.
+- `docs/`: map-tile decision, App Store checklist, screenshots.
 - [`CLAUDE.md`](CLAUDE.md): the detailed design notes (import rules, status mapping, data model, API,
   notification rules, conventions). It is the reference for anyone working on the code, human or AI.
 
@@ -61,9 +61,10 @@ Building-permit dossiers come from the **SITG, Système d'information du territo
 - Périmètre is an independent project. It is not published or endorsed by the État de Genève or the SITG.
   The data is shown as published, and SITG's official dossier page (`lien_sad`) is the reference.
 
-Address search uses the [geo.admin.ch](https://www.geo.admin.ch) search API (free, no key). The
-development map uses OpenStreetMap's public tiles, which are **not allowed for a published app**; see
-[`docs/map-tiles.md`](docs/map-tiles.md) for the production options.
+Address search uses the [geo.admin.ch](https://www.geo.admin.ch) search API (free, no key). The map uses
+[Mapbox](https://www.mapbox.com) raster tiles (light and dark styles, © Mapbox © OpenStreetMap); see
+[`docs/map-tiles.md`](docs/map-tiles.md) for why and for the fallback. Without a Mapbox token, debug builds
+use OpenStreetMap's public tiles, which are fine for development only.
 
 ## Local development
 
@@ -92,6 +93,24 @@ flutter pub get
 flutter run -d <simulator id> --dart-define=API_BASE_URL=http://localhost:8090
 ```
 
+### Map tokens (Mapbox)
+
+The map needs a Mapbox **public** token (`pk.…`, from your Mapbox account → Tokens; the default public
+scopes are enough). Use one token for development and another for release builds. Tokens are passed at
+build time from files that git ignores:
+
+```bash
+cd app
+cp config/example.json config/dev.json     # put the development token in it
+cp config/example.json config/prod.json    # put the release token in it
+flutter run -d <simulator id> --dart-define-from-file=config/dev.json
+flutter build ipa --release --dart-define-from-file=config/prod.json
+```
+
+A release iOS build without a token fails on purpose (Xcode build phase "Check Mapbox token"). A debug build
+without one falls back to OpenStreetMap's tiles. Never commit a token: CI runs gitleaks with a Mapbox rule
+(`.gitleaks.toml`), and `git config core.hooksPath .githooks` adds the same check before every commit.
+
 Debug builds default to `http://localhost:8090`. Release builds default to the production API, and
 `--dart-define=API_BASE_URL=…` always wins. To fabricate an event and watch the push pipeline (logged by
 `LogPushSender` when Firebase is not configured):
@@ -108,8 +127,9 @@ Real pushes go through Firebase Cloud Messaging (APNs on iOS). You need your own
 3. Download a service-account key to `backend/.secrets/firebase-service-account.json` (git-ignored) and
    start the backend with `FIREBASE_CREDENTIALS=.secrets/firebase-service-account.json`.
 
-Never commit any of these: service-account JSON, `.p8`/`.p12` keys, `.env*` files and the Firebase client
-config are all in `.gitignore`, and CI runs gitleaks on every merge request.
+Never commit any of these: service-account JSON, `.p8`/`.p12` keys, `.env*` files, the Firebase client
+config and `app/config/*.json` (Mapbox tokens) are all in `.gitignore`, and CI runs gitleaks on every merge
+request.
 
 ### Tests
 
@@ -117,6 +137,8 @@ config are all in `.gitignore`, and CI runs gitleaks on every merge request.
 cd backend && ./gradlew test        # unit + context tests (need the local PostGIS running)
 cd app && flutter analyze
 cd app && flutter test integration_test/subscription_flow_test.dart -d <simulator id>   # E2E, local backend
+cd app && flutter drive --driver=test_driver/map_screenshots.dart --target=integration_test/map_tiles_test.dart \
+  --dart-define-from-file=config/dev.json -d <simulator id>    # map tiles in Geneva and France, light + dark
 ```
 
 `PERIMETRE_PERF=1 ./gradlew test --tests '*DispatchPerformanceTest' -i` seeds 10,000 subscriptions and
@@ -143,9 +165,9 @@ The reference deployment runs on one VPS (2 vCPU, 4 GB RAM, Ubuntu 24.04) for th
 6. **Operations:** imports run at 03:15 (incremental) and Sundays 03:45 (full), Europe/Zurich.
    `GET /admin/job-runs` lists the runs. The optional `HEALTHCHECK_PING_URL` alerts you when a nightly run
    is missing or fails. `deploy/backup.sh` keeps 14 days of `pg_dump`; copy them off the server.
-7. **App:** build with `--dart-define=API_BASE_URL=https://api.<domain>`, your bundle id and your Firebase
-   config. Choose a map tile provider (see `docs/map-tiles.md`). Publish your own privacy page: the
-   template in `deploy/site/privacy.html` describes what is stored.
+7. **App:** build with `--dart-define=API_BASE_URL=https://api.<domain>`, your bundle id, your Firebase
+   config and your own Mapbox token (see "Map tokens"). Publish your own privacy page: the template in
+   `deploy/site/privacy.html` describes what is stored.
 
 ## Privacy
 
@@ -162,4 +184,5 @@ This program is free software: you can redistribute it and/or modify it under th
 General Public License, version 3** ([`LICENSE`](LICENSE)). If you run a modified version as a network
 service, the AGPL requires you to offer your users its source code.
 
-The SITG data is not covered by this license; it remains under the SITG's terms (see "Data source").
+The SITG data is not covered by this license; it remains under the SITG's terms (see "Data source"). Nor is
+the Mapbox logo (`app/assets/mapbox-logo.png`), a Mapbox trademark shown as the attribution Mapbox requires.

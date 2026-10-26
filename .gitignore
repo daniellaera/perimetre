@@ -30,3 +30,8 @@ app/firebase.json
 CLAUDE.local.md
 .claude/skills/ship/
 .claude/settings.local.json
+
+# Build-time app config (Mapbox tokens), passed with --dart-define-from-file: config/dev.json, config/prod.json.
+# Only the placeholder is committed.
+app/config/*.json
+!app/config/example.json

@@ -5,7 +5,7 @@ building-permit dossier (SITG open data layer `SIT_AUTOR_DOSSIER`) appears or ch
 within that radius.
 
 - `backend/`: Spring Boot 4, Java 21, Gradle (Groovy DSL), base package `ch.perimetre`
-- `README.md` (English, public), `LICENSE` (AGPL-3.0, Copyright Daniel Laera), `docs/` (map tiles,
+- `README.md` (English, public), `LICENSE` (AGPL-3.0, Copyright Daniel Laera), `docs/` (map-tile decision,
   App Store checklist, screenshots). The repository is meant to be published: no secret, host or
   personal detail in tracked files (operator notes: `CLAUDE.local.md`).
 - `app/`: Flutter, iOS first (Android must compile), two tabs: Explorer and Mes périmètres (see "App" below)
@@ -287,9 +287,9 @@ CHANTIER En chantier (blue) · RECOURS Recours (purple) · REFUSE Refusé (grey)
 
 Flutter stable, Riverpod 3 (`flutter_riverpod` + `riverpod_annotation`/`riverpod_generator`),
 go_router (`StatefulShellRoute` with two tabs: `/` Explorer, `/perimetre` Mes périmètres), dio,
-flutter_map with OSM tiles, url_launcher, firebase_core + firebase_messaging, shared_preferences.
-iOS bundle id `ch.perimetre.app` (Firebase iOS app, APNs). The Android `applicationId`/namespace and the
-OSM `userAgentPackageName` are still `ch.perimetre.perimetre`. French strings hardcoded, no i18n.
+flutter_map with Mapbox raster tiles, url_launcher, firebase_core + firebase_messaging, shared_preferences.
+iOS bundle id `ch.perimetre.app` (Firebase iOS app, APNs). The Android `applicationId`/namespace is still
+`ch.perimetre.perimetre`. French strings hardcoded, no i18n. Light and dark themes (system setting).
 
 ```
 lib/main.dart                      loads SharedPreferences + initPush(), ProviderScope overrides (retry disabled)
@@ -298,6 +298,7 @@ lib/firebase_options.dart          git-ignored: flutterfire output, or a copy of
 lib/api/models.dart                AddressSuggestion, Dossier, Groupe, Subscription(Input), Device, DossierEvent + vocabularies
 lib/api/geo_admin.dart             geo.admin.ch SearchServer address search
 lib/api/perimetre_api.dart         /dossiers, /devices; API_BASE_URL dart-define (release default: prod)
+lib/map/map_tiles.dart             Mapbox token (dart-define), base TileLayer (light/dark), MapAttribution
 lib/push/push_service.dart         PushService interface + provider (overridden in main)
 lib/push/init_push.dart            Firebase if configured, else StubPushService
 lib/push/firebase_push_service.dart   FCM: permission, token, refresh, tapped pushes
@@ -309,12 +310,16 @@ lib/features/subscription/providers.dart   MySubscriptions (device id in prefs, 
 lib/features/subscription/subscription_screen.dart   Mes périmètres tab (list, add/edit page, delete, feed)
 integration_test/subscription_flow_test.dart   simulator E2E against the local backend
 integration_test/screenshots_test.dart + test_driver/screenshots.dart   README screenshots (docs/screenshots)
+integration_test/map_tiles_test.dart + test_driver/map_screenshots.dart   base map check (build/map-screenshots)
+config/example.json                template of the git-ignored config/dev.json and config/prod.json (Mapbox tokens)
+assets/mapbox-logo.png (+ 2.0x/, 3.0x/)   the Mapbox logo, required on the map
 ```
 
 - **Simulators:** use a dedicated dev simulator and pass its **id** to `-d` (a name can match several
   devices). Never run dev builds on a simulator or device that holds a production subscription.
 - **Run on the iOS simulator** against the local backend (start the DB and `./gradlew bootRun` first):
-  `cd app && flutter run -d <simulator id> --dart-define=API_BASE_URL=http://localhost:8090`
+  `cd app && flutter run -d <simulator id> --dart-define-from-file=config/dev.json --dart-define=API_BASE_URL=http://localhost:8090`
+  (without `config/dev.json` the map falls back to OSM's public tiles, see "Map tiles")
   (the default base URL is `http://localhost:8090` in debug and profile builds; the simulator reaches
   the Mac's localhost). **Release builds default to `https://api.perimetre.ch`** (`kReleaseMode`); a
   `--dart-define=API_BASE_URL=…` always wins. Simulators run debug builds only, so to try the simulator
@@ -329,10 +334,17 @@ integration_test/screenshots_test.dart + test_driver/screenshots.dart   README s
 - **Radius slider:** 100–1000 m, step 50, default 200. It refetches on release, not while dragging.
 - iOS `Info.plist` sets `NSAllowsLocalNetworking` for plain-http localhost. Android main manifest
   declares INTERNET and an https VIEW `<queries>` entry for url_launcher.
-- OSM's public tile servers are fine for development only (tile usage policy). Switch to a proper
-  tile provider before release: **open decision**, see `docs/map-tiles.md` (swisstopo evaluated
-  2026-10-26 and rejected: blank on the French side at z17+, no dark style; recommendation OpenFreeMap
-  vector, no account, or Mapbox raster).
+- **Map tiles** (decided 2026-10-26, `docs/map-tiles.md`; swisstopo rejected, OpenFreeMap is the fallback):
+  Mapbox Static Tiles API, `mapbox/light-v11` or `dark-v11` following the theme, 512 px tiles @2x
+  (`tileDimension: 512`, `zoomOffset: -1`), in `lib/map/map_tiles.dart`. Token: `MAPBOX_ACCESS_TOKEN`
+  dart-define from `--dart-define-from-file=config/dev.json` (debug, simulator) or `config/prod.json`
+  (release); both git-ignored, never commit a token (gitleaks rule `mapbox-access-token` in
+  `.gitleaks.toml`). The Runner build phase "Check Mapbox token" fails a **Release** build without a `pk.`
+  token in `DART_DEFINES`. Debug/profile builds without a token use `tile.openstreetmap.org`
+  (development only, OSM tile policy). **Attribution** (`MapAttribution`, required by Mapbox, keep it
+  visible): the Mapbox logo top left, "© Mapbox", "© OpenStreetMap", "Improve this map" (feedback URL of
+  the current view) top right, because the list sheet covers the bottom. The privacy page names Mapbox
+  as the tile provider.
 - **Details sheet title:** when the short label is "Demande", the description is the title and the
   "Demande" heading is dropped (the description is then not repeated below).
 - **SITG attribution** ("Source : SITG – Système d'information du territoire à Genève") ends the details
@@ -426,8 +438,13 @@ Setup (once per Firebase project; Android still needs steps 1 and 3):
   time, rolls back. 2026-10-26 on the Mac: matching 121–155 ms; dispatch 2.3–2.4 s for ~29.5k
   notifications → ~4.3k log pushes to ~3.3k devices. With real FCM
   the sends are sequential (one HTTP call each), which dominates at that scale.
+- Map tiles: `cd app && flutter drive --driver=test_driver/map_screenshots.dart
+  --target=integration_test/map_tiles_test.dart --dart-define-from-file=config/dev.json -d <simulator id>`
+  (Geneva centre, Annemasse, Ferney-Voltaire at zoom 17, light + dark; fails on a tile error; screenshots
+  in `app/build/map-screenshots/`).
 - README screenshots (local backend, dev profile; fabricates 4 events): `cd app && flutter drive
-  --driver=test_driver/screenshots.dart --target=integration_test/screenshots_test.dart -d <simulator id>`,
+  --driver=test_driver/screenshots.dart --target=integration_test/screenshots_test.dart
+  --dart-define-from-file=config/dev.json -d <simulator id>`,
   then `sips --resampleWidth 600 ../docs/screenshots/*.png`.
 - App: `flutter analyze`; `integration_test/subscription_flow_test.dart` drives the real app on a
   simulator against the local backend (two perimeters, simulated push tap → details sheet, unknown
@@ -461,6 +478,9 @@ machine only). Read it when it exists; never copy its host details back into thi
   no defaults (unset = startup fails), Hikari pool 5, actuator exposes `health` only with
   `show-details: never` and no discovery page, scheduler on, `/admin/dev/**` absent, `/admin/**`
   behind `ADMIN_TOKEN` (see "API"). Optional `HEALTHCHECK_PING_URL` (see "Scheduling").
+- **Secrets scan:** `.gitleaks.toml` = gitleaks' default rules + `mapbox-access-token` (any `pk.`/`sk.`/`tk.`
+  token, with or without the word "mapbox" nearby); `.gitleaksignore` lists reviewed false positives.
+  `.githooks/pre-commit` runs it on staged changes once enabled per clone (`git config core.hooksPath .githooks`).
 - **CI** (`.gitlab-ci.yml`, GitLab shared runners): merge requests and main run `backend-test`
   (`./gradlew test` against a PostGIS service, `DB_URL` pointed at it), `app-analyze` (Flutter 3.47.7
   checked out in the job, the Firebase placeholders copied in, `flutter analyze`, `flutter test` when
