@@ -407,12 +407,16 @@ Setup (Daniel, once; done for iOS; Android still needs steps 1 and 3):
   simulator.
 - **Admin calls:** `curl -fsS -X POST -H "Authorization: Bearer $ADMIN_TOKEN"
   'https://api.perimetre.ch/admin/import?mode=incremental'` (the token is in Daniel's Vaultwarden).
-- **Rotate `ADMIN_TOKEN`:** generates a new one on the box, recreates the backend (the old token dies
-  with it) and prints the new one once, for Vaultwarden:
+- **Rotate `ADMIN_TOKEN`** (last: 2026-10-26). The new value is generated on the box and never shown:
+  it goes from `openssl` into an env var and is written by awk via `ENVIRON` (not argv), the file stays
+  600, then the backend is recreated (the old token dies with it):
   ```bash
-  ssh perimetre-prod 'cd /opt/perimetre && t=$(openssl rand -hex 32) && sed -i "s/^ADMIN_TOKEN=.*/ADMIN_TOKEN=$t/" .env.prod \
-    && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --force-recreate backend >/dev/null && echo "$t"'
+  ssh perimetre-prod 'cd /opt/perimetre && umask 077 && NEW=$(openssl rand -hex 32) awk '"'"'/^ADMIN_TOKEN=/{print "ADMIN_TOKEN=" ENVIRON["NEW"]; n++; next} {print} END{if(n!=1) exit 3}'"'"' .env.prod > .env.prod.new \
+    && chmod 600 .env.prod.new && mv .env.prod.new .env.prod \
+    && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --force-recreate backend'
   ```
+  Then copy it to the clipboard for Vaultwarden without displaying it:
+  `ssh perimetre-prod "grep '^ADMIN_TOKEN=' /opt/perimetre/.env.prod | cut -d= -f2- | tr -d '\n'" | pbcopy`.
   `DB_PASSWORD` is not rotated that way: Postgres only reads `POSTGRES_PASSWORD` when the volume is
   created. `ALTER ROLE perimetre PASSWORD '…'` in the db container first, then `.env.prod`, then
   recreate the backend.
