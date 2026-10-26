@@ -1,0 +1,10 @@
+// Copy to lib/firebase_options.dart (git-ignored) to build without Firebase: every platform throws
+// UnsupportedError, so initPush() falls back to StubPushService (fake token, no pushes).
+// For real pushes, generate the file instead: `flutterfire configure` (see README, "Push notifications").
+// ignore_for_file: type=lint
+import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+
+class DefaultFirebaseOptions {
+  static FirebaseOptions get currentPlatform =>
+      throw UnsupportedError('Firebase is not configured: run `flutterfire configure` (see README).');
+}

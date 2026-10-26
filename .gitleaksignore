@@ -1,0 +1,6 @@
+# Reviewed gitleaks findings (2026-10-26); none is a secret. Format: commit:file:rule:line.
+# Test fixture, a made-up 32-character bearer token (not the production ADMIN_TOKEN).
+feaa4fd5173950034e6aa0fd05b553397f3f9906:backend/src/test/java/ch/perimetre/admin/AdminTokenFilterTest.java:generic-api-key:14
+# Firebase iOS *client* API key from the FlutterFire config committed before it was untracked. It ships in
+# every app binary (GoogleService-Info.plist); its protection is the API restrictions set in Google Cloud.
+fb7d28a6717d3f88e8e8c3442e8d56c2596e6ad5:app/lib/firebase_options.dart:gcp-api-key:56
