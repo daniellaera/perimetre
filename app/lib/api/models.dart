@@ -154,7 +154,7 @@ class Dossier {
   String get typeDossierLabel => _typeDossierLabels[typeDossier] ?? typeDossier;
 }
 
-/// A notification subscription as returned by /subscriptions (the push token is never echoed back).
+/// A subscription (perimeter) of this device, as returned by /devices/{id}/subscriptions.
 class Subscription {
   const Subscription({
     required this.id,
@@ -163,6 +163,7 @@ class Subscription {
     required this.radiusM,
     required this.categories,
     required this.label,
+    required this.address,
   });
 
   final String id;
@@ -171,8 +172,14 @@ class Subscription {
   final int radiusM;
   final List<Groupe> categories;
 
-  /// The address label chosen in the app.
+  /// The user's name for it (Domicile, Travail, free text), if any.
   final String? label;
+
+  /// The address chosen in the app, e.g. "Rue de Carouge 50 1205 Genève".
+  final String? address;
+
+  /// Label, else the street part of the address.
+  String get name => label ?? (address == null ? 'Périmètre' : streetAddress(address!));
 
   factory Subscription.fromJson(Map<String, dynamic> json) => Subscription(
     id: json['id'] as String,
@@ -181,52 +188,60 @@ class Subscription {
     radiusM: json['radius_m'] as int,
     categories: (json['categories'] as List).map((c) => Groupe.fromApi(c as String)).toList(),
     label: json['label'] as String?,
+    address: json['address'] as String?,
   );
 }
 
-/// Body of POST and PUT /subscriptions.
+/// "Rue de Carouge 50 1205 Genève" → "Rue de Carouge 50" (drops postcode and locality).
+String streetAddress(String address) => address.replaceFirst(RegExp(r'\s+\d{4}\s+\S.*$'), '');
+
+/// Body of POST and PUT /devices/{id}/subscriptions.
 class SubscriptionInput {
   const SubscriptionInput({
-    required this.pushToken,
-    required this.platform,
     required this.lat,
     required this.lng,
     required this.radiusM,
     required this.categories,
     required this.label,
+    required this.address,
   });
 
-  final String pushToken;
-  final String platform;
   final double lat;
   final double lng;
   final int radiusM;
   final List<Groupe> categories;
   final String? label;
-
-  SubscriptionInput withToken(String token) => SubscriptionInput(
-    pushToken: token,
-    platform: platform,
-    lat: lat,
-    lng: lng,
-    radiusM: radiusM,
-    categories: categories,
-    label: label,
-  );
+  final String? address;
 
   Map<String, dynamic> toJson() => {
-    'push_token': pushToken,
-    'platform': platform,
     'lat': lat,
     'lng': lng,
     'radius_m': radiusM,
     'categories': [for (final c in categories) c.apiName],
     'label': label,
+    'address': address,
   };
 }
 
-/// An event in a subscription's perimeter: the dossier (with `distance_m` from the subscription point and its
-/// current groupe) plus what changed.
+/// This app installation on the backend: holds the push token and the subscriptions.
+class Device {
+  const Device({required this.id, required this.subscriptionCount, required this.maxSubscriptions});
+
+  final String id;
+  final int subscriptionCount;
+
+  /// The backend's cap per device.
+  final int maxSubscriptions;
+
+  factory Device.fromJson(Map<String, dynamic> json) => Device(
+    id: json['id'] as String,
+    subscriptionCount: json['subscription_count'] as int,
+    maxSubscriptions: json['max_subscriptions'] as int,
+  );
+}
+
+/// An event in a subscription's perimeter: the dossier (with `distance_m` from the nearest matching subscription
+/// point and its current groupe) plus what changed. [subscriptionIds]: the matching subscriptions, nearest first.
 class DossierEvent {
   const DossierEvent({
     required this.eventId,
@@ -234,6 +249,7 @@ class DossierEvent {
     required this.oldGroupe,
     required this.newGroupe,
     required this.occurredAt,
+    required this.subscriptionIds,
     required this.dossier,
   });
 
@@ -244,6 +260,7 @@ class DossierEvent {
   final Groupe? oldGroupe;
   final Groupe newGroupe;
   final DateTime occurredAt;
+  final List<String> subscriptionIds;
   final Dossier dossier;
 
   factory DossierEvent.fromJson(Map<String, dynamic> json) => DossierEvent(
@@ -252,6 +269,7 @@ class DossierEvent {
     oldGroupe: json['old_groupe'] == null ? null : Groupe.fromApi(json['old_groupe'] as String),
     newGroupe: Groupe.fromApi(json['new_groupe'] as String),
     occurredAt: DateTime.parse(json['occurred_at'] as String).toLocal(),
+    subscriptionIds: [for (final id in json['subscription_ids'] as List? ?? const []) id as String],
     dossier: Dossier.fromJson(json),
   );
 }

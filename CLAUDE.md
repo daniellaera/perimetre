@@ -131,14 +131,21 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
 - **Data facts (2026-10):** ~20.8k dossiers modified since 2025-01-01, ~1k/day. `date_maj_2` is
   date-only (midnight UTC) and lags about one day behind publication.
 
-## Data model (Flyway V1–V5)
+## Data model (Flyway V1–V6)
 
 - `dossier`: one row per SITG dossier (see "SITG import"); `dossier_geog_gist` on `(geom::geography)`.
 - `sync_state(source PK, last_run, bootstrapped)`: one row, `SIT_AUTOR_DOSSIER`.
-- `subscription(id UUID PK, push_token, platform ios|android|null, geom Point 4326, radius_m 100–1000,
-  categories TEXT[] default all five notifiable groupes, label, consecutive_failures, created_at,
-  updated_at)`; `subscription_geog_gist` on `(geom::geography)`. `consecutive_failures` is not in the
-  original spec: it counts runs whose push failed with an invalid token (see "Notifications").
+- `device(id UUID PK, push_token, platform ios|android|null, consecutive_failures, created_at,
+  updated_at)` (V6): one app installation. `consecutive_failures` counts runs whose push failed with an
+  invalid token (see "Notifications").
+- `subscription(id UUID PK, device_id → device ON DELETE CASCADE, geom Point 4326, radius_m 100–1000,
+  categories TEXT[] default all five notifiable groupes, label, address, created_at, updated_at)`;
+  `subscription_geog_gist` on `(geom::geography)`, `subscription_device_id_idx`. `label` is the user's
+  name for the perimeter (Domicile, Travail, free text), `address` the address it was placed at.
+  **V6** moved `push_token`/`platform`/`consecutive_failures` to `device`: every existing subscription got
+  a device with the **same id**, token, platform and counter, and its `label` (the single-subscription
+  app stored its address there) moved to `address`. Rolling the backend back past V6 needs the
+  pre-deploy `pg_dump` (the old columns are gone).
 - `event(id BIGSERIAL, id_dossier → dossier, kind NEW|GROUPE_CHANGE, old_groupe, new_groupe, occurred_at)`,
   indexed on `occurred_at` and `id_dossier`.
 - `notification(id, subscription_id → subscription ON DELETE CASCADE, event_id → event,
@@ -153,29 +160,40 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
 ## Notifications (`ch.perimetre.notification`)
 
 - **Matching** (`NotificationDispatcher`): for the events of a run, insert PENDING rows for every
-  subscription with `ST_DWithin(sub.geom::geography, dossier.geom::geography, sub.radius_m) AND
-  new_groupe = ANY(categories)`, `ON CONFLICT (subscription_id, event_id) DO NOTHING`; then send the
-  PENDING rows of those events, grouped by subscription.
-- **Per subscription and run** (`PushPlanner`): ≤ 3 notifications → one push per event; > 3 → ONE
-  summary push and all rows marked SENT together. So at most 3 pushes per subscription per run.
+  subscription with `ST_DWithin(sub.geom::geography, dossier.geom::geography, 1000) AND
+  ST_DWithin(…, sub.radius_m) AND new_groupe = ANY(categories)`, `ON CONFLICT (subscription_id,
+  event_id) DO NOTHING`; then send the PENDING rows of those events, grouped by **device**. The constant
+  1000 m (max radius) predicate is what makes the planner probe `subscription_geog_gist`: `radius_m`
+  belongs to the indexed table, so the exact check alone is no index condition (measured 2026-10-26,
+  10k subscriptions × 200 events: 1185 ms seq-scan nested loop → 155 ms index scan).
+- **Per device and run** (`PushPlanner`): notifications are grouped by event first, so an event
+  matching several subscriptions of one device is ONE push (all its rows marked by it). ≤ 3 events → one
+  push per event; > 3 → ONE summary push and all rows marked SENT together. So at most 3 pushes per
+  device per run.
 - **Payload** (`PushMessages`, French, never any names; only SITG's work description):
   - title `"{label} à {distance} m"`: label per the vocabulary below (M/MPA → Démolition); when it is
     "Demande", the first 40 chars of the description (trimmed, first letter capitalised, "…" when
-    cut). Distance rounded to the metre, from the subscription point.
+    cut). Distance rounded to the metre, from the nearest matching subscription point. Then
+    `" · {places}"` (≤ 40 chars) naming the matched subscriptions, nearest first (`placeName`): the
+    label; else, when the device has ≥ 2 subscriptions, the address without postcode and locality; else
+    nothing (a single unlabelled subscription, i.e. every legacy one, gets the original title).
   - body `"{event text}. {description, max 90 chars + …}"` (just `"{event text}."` without
     description). Event text by `new_groupe`: DEPOSE "Nouvelle demande déposée — délai d'opposition en
     cours" · AUTORISE "Autorisation délivrée" · CHANTIER "Les travaux commencent" · RECOURS "Un recours a
     été déposé" · REFUSE "Le projet ne se fera pas".
-  - data `{id_dossier, kind, new_groupe}`. Summary: title "Périmètre", body "N nouveaux changements
-    autour de chez vous", data `{kind: SUMMARY, count}`. iOS gets `aps.sound = default`.
+  - data `{id_dossier, kind, new_groupe, subscription_id}` (nearest match). Summary: title "Périmètre",
+    body "N nouveaux changements autour de chez vous" (N = events), or with named places
+    "N nouveaux changements (Domicile : 3, Travail : 2)", data `{kind: SUMMARY, count}`. iOS gets
+    `aps.sound = default`.
 - **Senders** (`PushSender`, chosen by `PushConfig` at startup): `FcmPushSender` (firebase-admin) when
   the env var `FIREBASE_CREDENTIALS` points to an existing service-account JSON file, otherwise
   `LogPushSender`, which logs `PUSH (log only) token=… title="…" body="…" data={…}` at INFO and
   reports success. The startup log says which one is active.
 - **Failures:** FCM `UNREGISTERED`, `INVALID_ARGUMENT` or `SENDER_ID_MISMATCH` = invalid token: that
-  push's rows → FAILED with the error, the rest of the subscription's pushes in that run → SKIPPED,
-  `consecutive_failures + 1`; at 3 the subscription is deleted (its notifications cascade). Any other
-  failure → FAILED, not counted. A successful push resets the counter, and so does a PUT.
+  push's rows → FAILED with the error, the rest of the device's pushes in that run → SKIPPED,
+  `device.consecutive_failures + 1`; at 3 the device is deleted (subscriptions and notifications
+  cascade). Any other failure → FAILED, not counted. A successful push resets the counter, and so does a
+  device PUT (or a legacy subscription PUT).
 - **Registration tokens are deprecated** in firebase-admin 9.11 (`Message.setToken` → `setFid`) and
   firebase_messaging 17 (`getToken`/`onTokenRefresh` → `register()`/`onRegistered`, which yield a
   Firebase Installation ID). Both sides still use tokens (deprecation suppressed and commented);
@@ -190,7 +208,7 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   durationMs}` plus `jobRunId` and `fcmErrors`; 409 when an import is already running, 400 for an
   unknown mode. `mode=full` is also how to trigger the weekly full refresh by hand.
 - `POST /admin/test-push?subscription_id=<uuid>` (all profiles, behind `ADMIN_TOKEN`): one real push
-  to that subscription's stored token through the active `PushSender` (FCM on prod), built by
+  to that subscription's device token through the active `PushSender` (FCM on prod), built by
   `PushMessages.forEvent` for the dossier its `/dossiers` list shows first within its radius and
   categories (as if just reaching its current groupe, so a tap opens the details sheet). Writes nothing
   (no event, no notification row; an invalid token is reported, not counted). Returns `{subscriptionId,
@@ -202,7 +220,7 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   `Authorization: Bearer <ADMIN_TOKEN>` (env var), else 401 + `WWW-Authenticate: Bearer`. Both sides are
   SHA-256-hashed, then `MessageDigest.isEqual` (constant time, length included). Profile `prod` refuses
   to start without a token of ≥ 32 chars; elsewhere an unset token leaves `/admin` open with a WARN
-  (local runs, context tests). Everything else (`/dossiers`, `/subscriptions`, health) stays open.
+  (local runs, context tests). Everything else (`/dossiers`, `/devices`, `/subscriptions`, health) stays open.
 - `GET /dossiers?lat=&lng=&radius=`: radius in metres (1–2000). Dossiers within the radius
   (`ST_DWithin`/`ST_Distance` on geography), excluding groupes `IGNORE` and `TERMINE` (both stay in
   the table), ordered by `date_maj_sitg DESC, distance_m ASC, id_dossier ASC` (deterministic, since
@@ -212,19 +230,39 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   défaut…)" when `type_operation` is `--`. `description` may have trailing whitespace.
   Served by the expression index `dossier_geog_gist` on `(geom::geography)` (V2). Keep the predicate
   written as `ST_DWithin(geom::geography, …)` or the planner falls back to a seq scan.
-- **Subscriptions** (no auth: the device keeps the random UUID, which is the only handle; snake_case JSON):
-  - `POST /subscriptions {push_token, platform?, lat, lng, radius_m, categories?, label?}` → 201 +
-    `Location`, body `{id, platform, lat, lng, radius_m, categories, label, created_at, updated_at}`
-    (the push token is never echoed back). Validation (400): `push_token` required; `platform` ios|android;
-    lat 46.12–46.38 and lng 5.94–6.32 (canton of Geneva bounding box); `radius_m` 100–1000;
-    `categories` a non-empty subset of DEPOSE, AUTORISE, CHANTIER, RECOURS, REFUSE (default: all five,
-    stored de-duplicated in that order); `label` ≤ 200 chars.
-  - `GET /subscriptions/{id}`; `PUT /subscriptions/{id}` (same body, replaces everything, used for
-    token refresh); `DELETE /subscriptions/{id}` → 204. Unknown id → 404, malformed UUID → 400.
-  - `GET /subscriptions/{id}/events?limit=50` (1–200): events whose dossier is within the radius and
-    whose `new_groupe` is in the categories (whatever their date), newest first (`occurred_at DESC,
-    id DESC`). Each item = the `/dossiers` fields (flattened; `groupe` is the dossier's current groupe,
-    `distance_m` from the subscription point) + `event_id, kind, old_groupe, new_groupe, occurred_at`.
+- **Devices and subscriptions** (no auth: the app keeps the device's random UUID, the only handle; a
+  subscription is reached through its device; snake_case JSON; the push token is never echoed back):
+  - `POST /devices {push_token, platform?}` → 201 + `Location`, body `{id, platform, subscription_count,
+    max_subscriptions, created_at, updated_at}`; `GET /devices/{id}`; `PUT /devices/{id}` (same body:
+    token refresh, resets the failure counter); `DELETE /devices/{id}` → 204 (subscriptions cascade).
+  - `GET /devices/{id}/subscriptions` (oldest first); `POST /devices/{id}/subscriptions {lat, lng,
+    radius_m, categories?, label?, address?}` → 201 + `Location`, body `{id, device_id, label, address,
+    lat, lng, radius_m, categories, created_at, updated_at}`; `GET`/`PUT` (replaces everything)/`DELETE`
+    `/devices/{id}/subscriptions/{sid}`. Validation (400): lat 46.12–46.38 and lng 5.94–6.32 (canton of
+    Geneva bounding box); `radius_m` 100–1000; `categories` a non-empty subset of DEPOSE, AUTORISE,
+    CHANTIER, RECOURS, REFUSE (default: all five, stored de-duplicated in that order); `label` ≤ 40,
+    `address` ≤ 200 (blank → null). Unknown device or a subscription of another device → 404.
+  - **Cap:** `perimetre.subscriptions.max-per-device` (env `SUBSCRIPTIONS_MAX_PER_DEVICE`, default 25).
+    Above it `POST …/subscriptions` → **409** `application/problem+json` `{code:
+    "SUBSCRIPTION_LIMIT_REACHED", max, title, detail: "Vous avez atteint le maximum de 25 périmètres sur
+    cet appareil. Supprimez-en un pour en ajouter un autre."}`. The device row is locked (`FOR UPDATE`)
+    while counting, so concurrent creations cannot overshoot.
+  - `GET /devices/{id}/events?limit=50` (1–200): events matching any of the device's subscriptions, ONCE
+    each, newest first (`occurred_at DESC, id DESC`); `distance_m` from the nearest matching subscription,
+    `subscription_ids` the matching ones nearest first. `GET /devices/{id}/subscriptions/{sid}/events`:
+    one subscription's (whatever their date). Each item = the `/dossiers` fields (flattened; `groupe` is
+    the dossier's current groupe) + `event_id, kind, old_groupe, new_groupe, occurred_at, subscription_ids`.
+- **Legacy `/subscriptions`** (the single-subscription app build of 2026-10; keep until every installed
+  app uses `/devices`, i.e. until the new version has shipped and old installs have updated). Unchanged
+  contract: `POST /subscriptions {push_token, platform?, lat, lng, radius_m, categories?, label?}` → 201,
+  body `{id, platform, lat, lng, radius_m, categories, label, created_at, updated_at}`; `GET`, `PUT` (same
+  body, used for token refresh), `DELETE /subscriptions/{id}`, `GET /subscriptions/{id}/events`. Mapping
+  (`LegacySubscriptionController`, `SubscriptionService`): POST creates a device and its subscription
+  with the **same id**; the request `label` (the app sends the address) is stored as `address`, and the
+  view's `label` is `coalesce(address, label)`; PUT updates the device's token/platform (resets its
+  counter) and the subscription's perimeter + address, leaving `label` alone; DELETE deletes the
+  subscription and its device once that holds none. The new app adopts a stored legacy
+  `subscription_id` as its `device_id` (same UUID).
 - **Dev only (`@Profile("dev & !prod")`, so absent in prod):** `POST /admin/dev/emit?id_dossier=X&new_groupe=Y`
   fabricates an event for an existing dossier (`NEW` if Y = DEPOSE, else `GROUPE_CHANGE` from its current groupe; the
   dossier row is not modified) and runs the dispatcher on it, so the push pipeline can be tested
@@ -262,7 +300,7 @@ CHANTIER En chantier (blue) · RECOURS Recours (purple) · REFUSE Refusé (grey)
 ## App (`app/`)
 
 Flutter stable, Riverpod 3 (`flutter_riverpod` + `riverpod_annotation`/`riverpod_generator`),
-go_router (`StatefulShellRoute` with two tabs: `/` Explorer, `/perimetre` Mon périmètre), dio,
+go_router (`StatefulShellRoute` with two tabs: `/` Explorer, `/perimetre` Mes périmètres), dio,
 flutter_map with OSM tiles, url_launcher, firebase_core + firebase_messaging, shared_preferences.
 iOS bundle id `ch.perimetre.app` (Firebase iOS app, APNs). The Android `applicationId`/namespace and the
 OSM `userAgentPackageName` are still `ch.perimetre.perimetre`. French strings hardcoded, no i18n.
@@ -271,9 +309,9 @@ OSM `userAgentPackageName` are still `ch.perimetre.perimetre`. French strings ha
 lib/main.dart                      loads SharedPreferences + initPush(), ProviderScope overrides (retry disabled)
 lib/app.dart                       MaterialApp.router + GoRouter (shell with two branches)
 lib/firebase_options.dart          generated by flutterfire (iOS only, project perimetre-901ec; see "Firebase")
-lib/api/models.dart                AddressSuggestion, Dossier, Groupe, Subscription(Input), DossierEvent + vocabularies
+lib/api/models.dart                AddressSuggestion, Dossier, Groupe, Subscription(Input), Device, DossierEvent + vocabularies
 lib/api/geo_admin.dart             geo.admin.ch SearchServer address search
-lib/api/perimetre_api.dart         /dossiers, /subscriptions; API_BASE_URL dart-define (release default: prod)
+lib/api/perimetre_api.dart         /dossiers, /devices; API_BASE_URL dart-define (release default: prod)
 lib/push/push_service.dart         PushService interface + provider (overridden in main)
 lib/push/init_push.dart            Firebase if configured, else StubPushService
 lib/push/firebase_push_service.dart   FCM: permission, token, refresh, tapped pushes
@@ -281,17 +319,21 @@ lib/push/stub_push_service.dart    fake "dev-token-<uuid>" (kept in prefs), no p
 lib/features/home/home_shell.dart  NavigationBar + tapped-push handling
 lib/features/explore/...           Explorer tab: providers, screen, shared widgets (address field, radius
                                    slider, map, list sheet, DossierRow, details sheet)
-lib/features/subscription/providers.dart   MySubscription (id in prefs, token refresh → PUT), recentEvents
-lib/features/subscription/subscription_screen.dart   Mon périmètre tab
+lib/features/subscription/providers.dart   MySubscriptions (device id in prefs, token refresh → PUT), recentEvents
+lib/features/subscription/subscription_screen.dart   Mes périmètres tab (list, add/edit page, delete, feed)
 integration_test/subscription_flow_test.dart   simulator E2E against the local backend
 ```
 
+- **Simulators:** dev work uses **`Perimetre Dev (iPhone 17 Pro)`, `56220C87-FCAD-458A-B65B-6E8E8025A7D3`**
+  (created 2026-10-26). Always pass that **id** to `-d`: the name "iPhone 17 Pro" also matches
+  `BE879EBC-…`, the simulator holding the prod test subscription, which must never get a dev build, an
+  uninstall or an erase (see "Status").
 - **Run on the iOS simulator** against the local backend (start the DB and `./gradlew bootRun` first):
-  `cd app && flutter run -d "iPhone 17 Pro" --dart-define=API_BASE_URL=http://localhost:8090`
+  `cd app && flutter run -d 56220C87-FCAD-458A-B65B-6E8E8025A7D3 --dart-define=API_BASE_URL=http://localhost:8090`
   (the default base URL is `http://localhost:8090` in debug and profile builds; the simulator reaches
   the Mac's localhost). **Release builds default to `https://api.perimetre.ch`** (`kReleaseMode`); a
   `--dart-define=API_BASE_URL=…` always wins. Simulators run debug builds only, so to try the simulator
-  against prod: `flutter run -d "iPhone 17 Pro" --dart-define=API_BASE_URL=https://api.perimetre.ch`.
+  against prod: `flutter run -d <simulator id> --dart-define=API_BASE_URL=https://api.perimetre.ch`.
   Android emulator: `--dart-define=API_BASE_URL=http://10.0.2.2:8090` (untested).
 - After changing a `@riverpod` provider: `dart run build_runner build`. Generated `*.g.dart` files are
   kept in the repo.
@@ -306,19 +348,26 @@ integration_test/subscription_flow_test.dart   simulator E2E against the local b
   tile provider before release.
 - **Details sheet title:** when the short label is "Demande", the description is the title and the
   "Demande" heading is dropped (the description is then not repeated below).
-- **Mon périmètre:** without a subscription, a form (address field + suggestions, radius slider, five
-  category chips, "Activer les notifications"; the explore address/radius pre-fill it). Saving asks
-  for notification permission, gets the token, POSTs (or PUTs when editing) `/subscriptions` and
-  stores the id in shared_preferences (`subscription_id`). With a subscription: a card with
-  "Modifier" / "Désactiver" (confirm, then DELETE) and the "Récent" feed from
-  `/subscriptions/{id}/events` (same `DossierRow` as Explorer, event text + date as the leading
-  line, marker in the event's colour), pull to refresh. A 404 on load forgets the stored id (the
-  backend deletes subscriptions after repeated invalid tokens). A yellow banner shows in stub mode.
-- **Tapped push:** switches to Mon périmètre and refreshes the feed; with `data.id_dossier`, looks the
-  dossier up via `/dossiers` around the subscription point and opens its details sheet, falling back
-  to the event feed (`/dossiers` is capped at 200 and hides TERMINE), else a SnackBar "Ce dossier
-  n'est plus disponible.". Summary pushes only open the tab.
-- **Token refresh:** `onTokenRefresh` → PUT the subscription with the new token.
+- **Mes périmètres:** without a subscription, the tab is the form: optional name (`ChoiceChip`s
+  Domicile / Travail fill it, free text ≤ 40), address field + suggestions, radius slider, five category
+  chips, "Activer les notifications" (the explore address/radius pre-fill it). With subscriptions: one
+  card each (name = label, else the street part of the address; address; radius and categories; tap or
+  ⋮ → "Modifier" / "Supprimer" with a confirm), "Ajouter un périmètre" (full-screen form page,
+  "Nouveau périmètre" / "Modifier le périmètre"), and the "Récent" feed from `/devices/{id}/events`
+  (`DossierRow` with event text + date as the leading line, plus the matched perimeter names when there
+  are several; marker in the event's colour), pull to refresh. Saving asks for notification
+  permission, gets the token, PUTs it to the device (or POSTs `/devices` when there is none or the
+  backend forgot it) and stores the device id in shared_preferences (`device_id`). A 409 shows the
+  backend's French message. A 404 on load forgets the stored device id (the backend deletes devices
+  after repeated invalid tokens). Deleting the last perimeter keeps the device. A yellow banner shows in
+  stub mode.
+- **Upgrade from the single-subscription build:** a stored `subscription_id` (legacy key) becomes the
+  `device_id` (the backend gave that subscription a device with the same id), then the key is removed.
+- **Tapped push:** switches to Mes périmètres and refreshes the feed; with `data.id_dossier`, looks the
+  dossier up via `/dossiers` around `data.subscription_id`'s point (else the first subscription) and
+  opens its details sheet, falling back to the device feed (`/dossiers` is capped at 200 and hides
+  TERMINE), else a SnackBar "Ce dossier n'est plus disponible.". Summary pushes only open the tab.
+- **Token refresh:** `onTokenRefresh` → `PUT /devices/{id}` with the new token.
 - **iOS push setup in the repo:** `Runner/Runner.entitlements` (`aps-environment = development`,
   referenced by `CODE_SIGN_ENTITLEMENTS` in all three Runner configurations) and `UIBackgroundModes`
   `remote-notification` in `Info.plist`.
@@ -353,19 +402,33 @@ Setup (Daniel, once; done for iOS; Android still needs steps 1 and 3):
 ## Tests
 
 - Unit: `SitgMappingTest` (statut → groupe, flags), `ChangeDetectorTest` (event rules incl.
-  bootstrap), `PushPlannerTest` (≤ 3 / > 3 summary rule), `PushMessagesTest` (payload wording, label
-  vocabulary, truncation), `AdminTokenFilterTest` (bearer check, prod requires a ≥ 32-char token),
+  bootstrap), `PushPlannerTest` (≤ 3 / > 3 summary rule counted in events, one push per event and
+  device), `PushMessagesTest` (payload wording, label vocabulary, truncation, place names, summary per
+  place), `AdminTokenFilterTest` (bearer check, prod requires a ≥ 32-char token),
   `HealthcheckPingerTest` (no-op when unset, ping URLs, a failing ping never throws),
   `ScheduledZoneTest` (every cron `@Scheduled` names Europe/Zurich).
 - Context tests need the local DB running and apply pending Flyway migrations to it:
   `BackendApplicationTests`, and `PushPipelineIntegrationTest` (profile `dev`,
   `FIREBASE_CREDENTIALS` forced empty, `@Transactional` so everything is rolled back): subscription →
   `/admin/dev/emit` → notification SENT through `LogPushSender` (log captured) → `/events` feed;
-  category filtering; validation. `ImportJobRunTest` (SitgImporter mocked): `job_run` row on success
-  and FAILED on exception, `/admin/job-runs` newest first.
+  category filtering; validation; all through the legacy `/subscriptions` API. `DeviceApiIntegrationTest`
+  (cap lowered to 3): device + subscription CRUD, 409 with code and French message, validation, legacy
+  API mapped onto devices (same id, token refresh, label vs address, delete), one push per event and
+  device naming both perimeters + device feed. `ImportJobRunTest` (SitgImporter mocked): `job_run` row
+  on success and FAILED on exception, `/admin/job-runs` newest first.
+- `V6MigrationTest`: creates a throwaway database `perimetre_v6_migration_test` on the same server,
+  migrates it to V5, seeds prod-like rows, migrates to the latest and checks ids, tokens, counters,
+  label → address, notifications and cascades (dropped afterwards). A manual rehearsal on a copy of the
+  local V5 DB (2026-10-26) matched too.
+- **On demand:** `PERIMETRE_PERF=1 ./gradlew test --tests '*DispatchPerformanceTest' -i` seeds 10k
+  subscriptions on 4k devices + 200 events (needs imported dossiers), prints the matching plan (must
+  show `subscription_geog_gist`) and the dispatch time, rolls back. 2026-10-26 on the Mac: matching
+  155 ms; dispatch 2.3 s for 29,531 notifications → 4,324 log pushes to 3,320 devices. With real FCM
+  the sends are sequential (one HTTP call each), which dominates at that scale.
 - App: `flutter analyze`; `integration_test/subscription_flow_test.dart` drives the real app on a
-  simulator against the local backend (subscribe, simulated push tap → details sheet, unknown
-  dossier message, deactivate): `cd app && flutter test integration_test -d "iPhone 17 Pro"`.
+  simulator against the local backend (two perimeters, simulated push tap → details sheet, unknown
+  dossier message, delete both; adoption of a legacy subscription id):
+  `cd app && flutter test integration_test -d 56220C87-FCAD-458A-B65B-6E8E8025A7D3`.
   Android is not built locally (no Android SDK on this Mac); firebase_messaging 17 needs minSdk 24,
   which is Flutter 3.47's default (`flutter.minSdkVersion` in `android/app`).
 

@@ -19,7 +19,7 @@ abstract interface class PushService {
   Stream<String> get onTokenRefresh;
 
   /// `data` of pushes tapped while the app was in the background:
-  /// `{id_dossier, kind, new_groupe}`, or `{kind: SUMMARY, count}`.
+  /// `{id_dossier, kind, new_groupe, subscription_id}`, or `{kind: SUMMARY, count}`.
   Stream<Map<String, dynamic>> get onOpened;
 
   /// `data` of the push that launched the app, if any.

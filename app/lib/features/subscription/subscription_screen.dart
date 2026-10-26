@@ -3,58 +3,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../api/models.dart';
+import '../../api/perimetre_api.dart';
 import '../../push/push_service.dart';
 import '../explore/providers.dart';
 import '../explore/widgets.dart';
 import 'providers.dart';
 
-/// "Mon périmètre" tab: the subscription (form or summary card) and the recent events in its perimeter.
-class SubscriptionScreen extends ConsumerStatefulWidget {
+/// "Mes périmètres" tab: the device's subscriptions (a form when there is none yet) and the recent events in
+/// any of them.
+class SubscriptionScreen extends ConsumerWidget {
   const SubscriptionScreen({super.key});
 
-  @override
-  ConsumerState<SubscriptionScreen> createState() => _SubscriptionScreenState();
-}
-
-class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
-  bool _editing = false;
-
-  /// Reloads the subscription (it may have been deleted server-side), then its events.
-  Future<void> _refresh() async {
+  /// Reloads the subscriptions (the device may have been deleted server-side), then the events.
+  Future<void> _refresh(WidgetRef ref) async {
     try {
-      ref.invalidate(mySubscriptionProvider);
+      ref.invalidate(mySubscriptionsProvider);
       await ref.read(recentEventsProvider.future);
     } catch (_) {
       // The error is shown in the list.
     }
   }
 
-  Future<void> _deactivate() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Désactiver les notifications ?'),
-        content: const Text('Vous ne recevrez plus de notifications pour ce périmètre.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Désactiver')),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await ref.read(mySubscriptionProvider.notifier).deactivate();
-      messenger.showSnackBar(const SnackBar(content: Text('Notifications désactivées.')));
-    } on DioException {
-      messenger.showSnackBar(const SnackBar(content: Text('Impossible de désactiver. Réessayez plus tard.')));
-    }
-  }
-
   @override
-  Widget build(BuildContext context) {
-    final async = ref.watch(mySubscriptionProvider);
-    final subscription = async.value;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(mySubscriptionsProvider);
+    final subscriptions = async.value;
 
     final List<Widget> children;
     if (async.isLoading && !async.hasValue) {
@@ -62,29 +35,31 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     } else if (async.hasError && !async.hasValue) {
       children = [
         _Message(
-          'Impossible de charger votre périmètre.',
-          action: TextButton(onPressed: () => ref.invalidate(mySubscriptionProvider), child: const Text('Réessayer')),
+          'Impossible de charger vos périmètres.',
+          action: TextButton(onPressed: () => ref.invalidate(mySubscriptionsProvider), child: const Text('Réessayer')),
         ),
       ];
-    } else if (subscription == null || _editing) {
-      children = [
-        _SubscriptionForm(
-          initial: subscription,
-          onDone: () => setState(() => _editing = false),
-          onCancel: subscription == null ? null : () => setState(() => _editing = false),
-        ),
-      ];
+    } else if (subscriptions == null || subscriptions.isEmpty) {
+      children = [_SubscriptionForm(initial: null, first: true, onDone: () {})];
     } else {
       children = [
-        _SubscriptionCard(subscription, onEdit: () => setState(() => _editing = true), onDeactivate: _deactivate),
-        const _RecentEvents(),
+        for (final s in subscriptions) _SubscriptionCard(s),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: OutlinedButton.icon(
+            onPressed: () => openSubscriptionForm(context),
+            icon: const Icon(Icons.add_location_alt_outlined),
+            label: const Text('Ajouter un périmètre'),
+          ),
+        ),
+        _RecentEvents(subscriptions),
       ];
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Mon périmètre')),
+      appBar: AppBar(title: const Text('Mes périmètres')),
       body: RefreshIndicator(
-        onRefresh: _refresh,
+        onRefresh: () => _refresh(ref),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.only(bottom: 24),
@@ -95,6 +70,44 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         ),
       ),
     );
+  }
+}
+
+/// The add form (or the edit form for [initial]) as a full-screen page.
+Future<void> openSubscriptionForm(BuildContext context, {Subscription? initial}) {
+  return Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (context) => Scaffold(
+        appBar: AppBar(title: Text(initial == null ? 'Nouveau périmètre' : 'Modifier le périmètre')),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.only(bottom: 24),
+          child: _SubscriptionForm(initial: initial, first: false, onDone: () => Navigator.of(context).pop()),
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _confirmDelete(BuildContext context, WidgetRef ref, Subscription s) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Supprimer ce périmètre ?'),
+      content: Text('Vous ne recevrez plus de notifications pour « ${s.name} ».'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer')),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await ref.read(mySubscriptionsProvider.notifier).remove(s.id);
+    messenger.showSnackBar(const SnackBar(content: Text('Périmètre supprimé.')));
+  } on DioException {
+    messenger.showSnackBar(const SnackBar(content: Text('Suppression impossible. Réessayez plus tard.')));
   }
 }
 
@@ -109,7 +122,7 @@ class _DevModeBanner extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: const Text(
         'Mode développement : Firebase n\'est pas configuré, les notifications sont simulées (jeton factice).',
-        style: TextStyle(fontSize: 12),
+        style: TextStyle(fontSize: 12, color: Colors.black87),
       ),
     );
   }
@@ -136,25 +149,30 @@ class _Message extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Form: address, radius, categories
+// Form: name, address, radius, categories
 
 class _SubscriptionForm extends ConsumerStatefulWidget {
-  const _SubscriptionForm({required this.initial, required this.onDone, required this.onCancel});
+  const _SubscriptionForm({required this.initial, required this.first, required this.onDone});
 
   /// The subscription being edited, or null for a new one.
   final Subscription? initial;
+
+  /// The device has no subscription yet: the form is the whole tab and introduces the app.
+  final bool first;
   final VoidCallback onDone;
-  final VoidCallback? onCancel;
 
   @override
   ConsumerState<_SubscriptionForm> createState() => _SubscriptionFormState();
 }
 
 class _SubscriptionFormState extends ConsumerState<_SubscriptionForm> {
+  static const _suggestedNames = ['Domicile', 'Travail'];
+
+  late final _name = TextEditingController(text: widget.initial?.label);
   late AddressSuggestion? _address = widget.initial == null
-      ? ref.read(selectedAddressProvider)
+      ? (widget.first ? ref.read(selectedAddressProvider) : null)
       : AddressSuggestion(
-          label: widget.initial!.label ?? 'Adresse enregistrée',
+          label: widget.initial!.address ?? 'Adresse enregistrée',
           lat: widget.initial!.lat,
           lon: widget.initial!.lng,
         );
@@ -164,25 +182,49 @@ class _SubscriptionFormState extends ConsumerState<_SubscriptionForm> {
 
   bool get _valid => _address != null && _categories.isNotEmpty;
 
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
   Future<void> _save() async {
     final messenger = ScaffoldMessenger.of(context);
+    final name = _name.text.trim();
+    final input = SubscriptionInput(
+      lat: _address!.lat,
+      lng: _address!.lon,
+      radiusM: _radius,
+      categories: [for (final g in Groupe.notifiable) if (_categories.contains(g)) g],
+      label: name.isEmpty ? null : name,
+      address: widget.initial != null && _address!.label == 'Adresse enregistrée' ? null : _address!.label,
+    );
     setState(() => _saving = true);
     try {
-      await ref
-          .read(mySubscriptionProvider.notifier)
-          .save(
-            address: _address!,
-            radiusM: _radius,
-            categories: [for (final g in Groupe.notifiable) if (_categories.contains(g)) g],
-          );
+      final subscriptions = ref.read(mySubscriptionsProvider.notifier);
+      if (widget.initial == null) {
+        await subscriptions.add(input);
+      } else {
+        await subscriptions.edit(widget.initial!.id, input);
+      }
       messenger.showSnackBar(
-        SnackBar(content: Text(widget.initial == null ? 'Notifications activées.' : 'Périmètre mis à jour.')),
+        SnackBar(
+          content: Text(
+            widget.first
+                ? 'Notifications activées.'
+                : widget.initial == null
+                ? 'Périmètre ajouté.'
+                : 'Périmètre mis à jour.',
+          ),
+        ),
       );
       widget.onDone();
     } on NotificationsDeniedException {
       messenger.showSnackBar(
         const SnackBar(content: Text('Notifications refusées. Autorisez-les dans les Réglages de l\'iPhone.')),
       );
+    } on SubscriptionLimitException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
       debugPrint('Subscription save failed: $e');
       messenger.showSnackBar(const SnackBar(content: Text('Enregistrement impossible. Réessayez plus tard.')));
@@ -200,13 +242,41 @@ class _SubscriptionFormState extends ConsumerState<_SubscriptionForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (isNew) ...[
+          if (widget.first) ...[
             Text(
-              'Recevez une notification quand un dossier de construction apparaît ou change de statut près de chez vous.',
+              'Recevez une notification quand un dossier de construction apparaît ou change de statut près de chez '
+              'vous. Vous pourrez ajouter d\'autres périmètres ensuite (travail, famille…).',
               style: text.bodyMedium,
             ),
             const SizedBox(height: 16),
           ],
+          TextField(
+            key: const Key('subscription-name'),
+            controller: _name,
+            maxLength: 40,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Nom (facultatif)',
+              hintText: 'Domicile, Travail…',
+              border: OutlineInputBorder(),
+              isDense: true,
+              counterText: '',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final name in _suggestedNames)
+                ChoiceChip(
+                  label: Text(name),
+                  selected: _name.text.trim() == name,
+                  onSelected: (on) => setState(() => _name.text = on ? name : ''),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
           AddressField(initialText: _address?.label, onSelected: (a) => setState(() => _address = a)),
           const SizedBox(height: 8),
           RadiusSlider(value: _radius, onChangeEnd: (r) => setState(() => _radius = r)),
@@ -243,14 +313,15 @@ class _SubscriptionFormState extends ConsumerState<_SubscriptionForm> {
               icon: _saving
                   ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : Icon(isNew ? Icons.notifications_active : Icons.check),
-              label: Text(isNew ? 'Activer les notifications' : 'Enregistrer'),
+              label: Text(
+                widget.first
+                    ? 'Activer les notifications'
+                    : isNew
+                    ? 'Ajouter ce périmètre'
+                    : 'Enregistrer',
+              ),
             ),
           ),
-          if (widget.onCancel != null)
-            SizedBox(
-              width: double.infinity,
-              child: TextButton(onPressed: _saving ? null : widget.onCancel, child: const Text('Annuler')),
-            ),
         ],
       ),
     );
@@ -258,50 +329,49 @@ class _SubscriptionFormState extends ConsumerState<_SubscriptionForm> {
 }
 
 // ---------------------------------------------------------------------------
-// Current subscription
+// One subscription
 
-class _SubscriptionCard extends StatelessWidget {
-  const _SubscriptionCard(this.subscription, {required this.onEdit, required this.onDeactivate});
+class _SubscriptionCard extends ConsumerWidget {
+  const _SubscriptionCard(this.subscription);
 
   final Subscription subscription;
-  final VoidCallback onEdit;
-  final VoidCallback onDeactivate;
+
+  static IconData _icon(String? label) => switch (label?.toLowerCase()) {
+    'domicile' => Icons.home_outlined,
+    'travail' => Icons.work_outline,
+    _ => Icons.place_outlined,
+  };
 
   @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final s = subscription;
     final all = s.categories.length == Groupe.notifiable.length;
     return Card(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-        child: Column(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: ListTile(
+        contentPadding: const EdgeInsets.only(left: 16, right: 4),
+        leading: Icon(_icon(s.label)),
+        title: Text(s.name, style: theme.textTheme.titleMedium),
+        subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Icon(Icons.notifications_active),
-                const SizedBox(width: 8),
-                Expanded(child: Text('Notifications actives', style: text.titleMedium)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(s.label ?? 'Adresse enregistrée', style: text.bodyLarge),
-            const SizedBox(height: 4),
+            if (s.label != null && s.address != null) Text(s.address!),
             Text(
               'Rayon ${s.radiusM} m · ${all ? 'tous les statuts' : s.categories.map((g) => g.label).join(', ')}',
-              style: text.bodyMedium?.copyWith(color: Colors.black54),
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
             ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(onPressed: onDeactivate, child: const Text('Désactiver')),
-                const SizedBox(width: 8),
-                OutlinedButton(onPressed: onEdit, child: const Text('Modifier')),
-              ],
-            ),
+          ],
+        ),
+        onTap: () => openSubscriptionForm(context, initial: s),
+        trailing: PopupMenuButton<String>(
+          tooltip: 'Actions',
+          onSelected: (action) => action == 'edit'
+              ? openSubscriptionForm(context, initial: s)
+              : _confirmDelete(context, ref, s),
+          itemBuilder: (context) => const [
+            PopupMenuItem(value: 'edit', child: Text('Modifier')),
+            PopupMenuItem(value: 'delete', child: Text('Supprimer')),
           ],
         ),
       ),
@@ -313,7 +383,20 @@ class _SubscriptionCard extends StatelessWidget {
 // Recent events
 
 class _RecentEvents extends ConsumerWidget {
-  const _RecentEvents();
+  const _RecentEvents(this.subscriptions);
+
+  final List<Subscription> subscriptions;
+
+  /// With several perimeters, the name(s) of those an event matched.
+  String? _place(DossierEvent e) {
+    if (subscriptions.length < 2) return null;
+    final names = {
+      for (final id in e.subscriptionIds)
+        for (final s in subscriptions)
+          if (s.id == id) s.name,
+    };
+    return names.isEmpty ? null : names.join(', ');
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -334,10 +417,12 @@ class _RecentEvents extends ConsumerWidget {
             action: TextButton(onPressed: () => ref.invalidate(recentEventsProvider), child: const Text('Réessayer')),
           )
         else if (events.isEmpty)
-          const _Message('Aucun changement pour l\'instant. Vous serez notifié dès qu\'un dossier bouge dans votre périmètre.'),
+          const _Message(
+            'Aucun changement pour l\'instant. Vous serez notifié dès qu\'un dossier bouge dans vos périmètres.',
+          ),
         const Divider(height: 1),
         for (final e in events)
-          DossierRow(e.dossier, event: e, onTap: (d) => showDossierDetails(context, d)),
+          DossierRow(e.dossier, event: e, place: _place(e), onTap: (d) => showDossierDetails(context, d)),
       ],
     );
   }
