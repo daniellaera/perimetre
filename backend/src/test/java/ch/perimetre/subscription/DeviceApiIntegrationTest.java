@@ -215,13 +215,14 @@ class DeviceApiIntegrationTest {
         UUID neighbour = createDevice("dev-token-neighbour");
         createSubscription(neighbour, null, 46.1934, 6.1425, 300);
 
+        // The totals of the run also count whatever subscriptions the local DB holds there: check ours only.
         mvc.perform(post("/admin/dev/emit").param("id_dossier", DOSSIER_ID).param("new_groupe", "AUTORISE"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.notifications").value(3))
-                .andExpect(jsonPath("$.pushes").value(2));
+                .andExpect(status().isOk());
 
         assertThat(Pattern.compile("PUSH \\(log only\\) token=dev-token-dedupe ").matcher(output.getOut()).results()
                 .count()).isOne();
+        assertThat(Pattern.compile("PUSH \\(log only\\) token=dev-token-neighbour ").matcher(output.getOut())
+                .results().count()).isOne();
         assertThat(output).contains("title=\"Nouvelle villa à 111 m · Domicile, Travail\"",
                 "token=dev-token-neighbour title=\"Nouvelle villa à 111 m\"");
         List<String> statuses = jdbc.sql("""
