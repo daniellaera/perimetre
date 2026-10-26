@@ -515,6 +515,12 @@ class _DossierDetails extends StatelessWidget {
                 label: const Text('Voir le dossier officiel'),
               ),
             ),
+            const SizedBox(height: 12),
+            // Required by the SITG open-data terms (source attribution).
+            Text(
+              'Source : SITG – Système d\'information du territoire à Genève',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
           ],
         ),
       ),

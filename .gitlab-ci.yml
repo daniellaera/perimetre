@@ -1,8 +1,8 @@
 # Périmètre — CI: tests merge requests, builds and pushes the backend image, never deploys.
 #
 # Deployment stays manual (deploy/ship.sh, or the `ship` skill), like DealJE.
-# Merge requests: backend tests (unit + context tests against a PostGIS service)
-# and `flutter analyze`. On every push to main: the same checks, then
+# Merge requests: backend tests (unit + context tests against a PostGIS service),
+# `flutter analyze` and a gitleaks scan of the history. On every push to main: the same checks, then
 # registry.gitlab.com/daniellaera1/perimetre/backend tagged :<short-sha> and :latest.
 # Other branches without an MR run nothing.
 #
@@ -63,9 +63,23 @@ app-analyze:
     - export PATH="$FLUTTER_SDK/bin:$PATH"
     - flutter --version
     - cd app
+    # The Firebase client config is not in git: build against the committed placeholders (push disabled).
+    - '[ -f lib/firebase_options.dart ] || cp lib/firebase_options.dart.example lib/firebase_options.dart'
     - flutter pub get
     - flutter analyze
     - '[ ! -d test ] || flutter test'
+  interruptible: true
+
+secrets-scan:
+  stage: test
+  image:
+    name: zricethezav/gitleaks:v8.30.1
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: 0
+  # Whole history of the branch; reviewed false positives are listed in .gitleaksignore.
+  script:
+    - gitleaks git --redact --verbose .
   interruptible: true
 
 backend-image:

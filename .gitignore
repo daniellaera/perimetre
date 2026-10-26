@@ -13,3 +13,20 @@ docker-compose.override.yml
 
 # Local secrets (Firebase service-account JSON, see CLAUDE.md)
 backend/.secrets/
+
+# Firebase client config, generated per deployment by `flutterfire configure` (see README). The *.example
+# files next to them are the committed placeholders.
+app/lib/firebase_options.dart
+app/ios/Runner/GoogleService-Info.plist
+app/android/app/google-services.json
+app/firebase.json
+
+# Apple keys and certificates
+*.p8
+*.p12
+*.mobileprovision
+
+# Operator-only notes and tooling (prod host, paths, recipes): kept on the operator's machine.
+CLAUDE.local.md
+.claude/skills/ship/
+.claude/settings.local.json
