@@ -1,0 +1,41 @@
+# Périmètre, Caddy in the compose stack (docker-compose.prod.yml). Automatic
+# HTTPS (Let's Encrypt) for every site below; certificates live in the
+# caddy_data volume. Reload after a change:
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod exec caddy caddy reload --config /etc/caddy/Caddyfile
+{
+	servers {
+		# 443/udp is closed at the Infomaniak firewall: do not advertise HTTP/3.
+		protocols h1 h2
+	}
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}
+
+api.perimetre.ch {
+	import security_headers
+	encode gzip
+	reverse_proxy backend:8090
+}
+
+perimetre.ch {
+	import security_headers
+	header {
+		Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+	}
+	root * /srv/site
+	encode gzip
+	# /privacy serves privacy.html.
+	try_files {path} {path}.html
+	file_server
+}
+
+www.perimetre.ch {
+	redir https://perimetre.ch{uri} permanent
+}

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Confidentialité — Périmètre</title>
+<meta name="description" content="Ce que Périmètre enregistre, où, et pour combien de temps.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%23e8590c' stroke-width='3' stroke-dasharray='5 3'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%23e8590c'/%3E%3C/svg%3E">
+<style>
+	:root {
+		--bg: #fbfaf8;
+		--fg: #1c1b1a;
+		--muted: #5f5b55;
+		--accent: #c4450a;
+		--border: #e6e2dc;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--bg: #141312;
+			--fg: #f1eee9;
+			--muted: #a8a29a;
+			--accent: #ff8a4c;
+			--border: #33302c;
+		}
+	}
+	* { box-sizing: border-box; }
+	html { -webkit-text-size-adjust: 100%; }
+	body {
+		margin: 0;
+		background: var(--bg);
+		color: var(--fg);
+		font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	}
+	main { max-width: 40rem; margin: 0 auto; padding: 3rem 1rem 4rem; }
+	.home { color: var(--muted); text-decoration: none; font-size: 0.95rem; }
+	h1 { font-size: clamp(1.9rem, 6vw, 2.5rem); line-height: 1.15; margin: 1.5rem 0 0.5rem; letter-spacing: -0.01em; }
+	.updated { color: var(--muted); margin: 0 0 2rem; font-size: 0.95rem; }
+	h2 { font-size: 1.15rem; margin: 2.25rem 0 0.5rem; padding-top: 1.25rem; border-top: 1px solid var(--border); }
+	ul { padding-left: 1.25rem; }
+	li { margin: 0.3rem 0; }
+	a { color: var(--accent); }
+	.lead { font-size: 1.1rem; }
+</style>
+</head>
+<body>
+<main>
+	<a class="home" href="/">← Périmètre</a>
+	<h1>Confidentialité</h1>
+	<p class="updated">Dernière mise à jour : 26 octobre 2026</p>
+
+	<p class="lead">Périmètre fonctionne sans compte : pas de nom, pas d'adresse e-mail, pas de numéro de téléphone. Pour vous avertir, il lui suffit d'un point, d'un rayon et d'un jeton de notification.</p>
+
+	<h2>Ce qui est enregistré</h2>
+	<p>Quand vous activez les notifications dans « Mon périmètre », notre serveur enregistre :</p>
+	<ul>
+		<li><strong>un point</strong> : les coordonnées de l'adresse choisie (l'adresse elle-même n'est pas enregistrée) ;</li>
+		<li><strong>un rayon</strong>, entre 100 et 1000 mètres, et les catégories de changements qui vous intéressent ;</li>
+		<li><strong>un jeton de notification</strong> fourni par votre téléphone, et sa plateforme (iOS ou Android) ;</li>
+		<li>un libellé facultatif, les dates de création et de modification, et l'historique des notifications envoyées (quel dossier, quand, et si l'envoi a réussi).</li>
+	</ul>
+	<p>Le téléphone garde un identifiant aléatoire qui désigne cet abonnement ; c'est le seul lien entre l'application et ces données. Rien n'est enregistré tant que vous ne faites qu'explorer la carte.</p>
+
+	<h2>Où sont les données</h2>
+	<p>Le serveur et sa base de données sont hébergés en Suisse, chez Infomaniak. Les sauvegardes restent en Suisse.</p>
+
+	<h2>Notifications</h2>
+	<p>Les notifications passent par Firebase Cloud Messaging (Google) et, sur iPhone, par le service de notifications d'Apple. Ces services reçoivent le jeton de notification et le texte de chaque notification. Ce texte ne contient que des informations publiques du SITG (type de projet, description des travaux) et la distance à votre point, jamais de nom.</p>
+
+	<h2>Autres services utilisés par l'application</h2>
+	<ul>
+		<li><strong>Recherche d'adresse</strong> : le texte saisi est envoyé au géoportail fédéral (geo.admin.ch) pour proposer des adresses.</li>
+		<li><strong>Fond de carte</strong> : les tuiles de la carte sont chargées depuis un fournisseur de cartes (actuellement OpenStreetMap), qui voit donc la zone affichée.</li>
+		<li><strong>Données des dossiers</strong> : les demandes d'autorisation de construire proviennent des données ouvertes du SITG (Système d'information du territoire à Genève).</li>
+	</ul>
+
+	<h2>Durée de conservation</h2>
+	<ul>
+		<li>« Désactiver » dans l'application supprime immédiatement l'abonnement et son historique de notifications.</li>
+		<li>Si l'application est désinstallée, le jeton devient invalide et l'abonnement est supprimé automatiquement après trois tentatives d'envoi refusées.</li>
+		<li>Les sauvegardes de la base de données sont gardées 14 jours, puis effacées.</li>
+		<li>Le serveur ne tient pas de journal d'accès ; ses journaux techniques ne contiennent ni adresse IP, ni coordonnées, ni jeton.</li>
+	</ul>
+
+	<h2>Vos droits</h2>
+	<p>Vous pouvez à tout moment supprimer vos données en désactivant les notifications. Pour toute question ou demande d'accès selon la loi fédérale sur la protection des données (LPD), écrivez à <a href="mailto:contact@perimetre.ch">contact@perimetre.ch</a>.</p>
+</main>
+</body>
+</html>

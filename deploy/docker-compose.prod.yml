@@ -1,0 +1,91 @@
+# Périmètre production stack, /opt/perimetre on perimetre-prod (see CLAUDE.md,
+# "Production"). Synced there by deploy/ship.sh; always run with the env file:
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod <command>
+#
+# Only Caddy publishes ports. The backend and Postgres are reachable on the
+# compose network alone, so X-Forwarded-* can only come from Caddy.
+name: perimetre
+
+# Every container's log is capped (Docker's json-file default has no limit).
+# 5 x 10 MB per container; `docker logs` reads across the rotated files.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  caddy:
+    image: caddy:2.11.7-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f
+    restart: always
+    logging: *default-logging
+    depends_on:
+      - backend
+    ports:
+      # TCP only: the Infomaniak firewall allows 80/443 TCP, so no HTTP/3 (see Caddyfile).
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Directories, not single files (ship.sh puts deploy/Caddyfile in caddy/):
+      # a file bind mount would keep showing the old copy after a sync.
+      - ./caddy:/etc/caddy:ro
+      - ./site:/srv/site:ro
+      # Certificates and ACME account: losing this volume means re-issuing.
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 256m
+
+  backend:
+    # BACKEND_TAG is set by ship.sh for a rollback or a pinned deploy; :latest otherwise.
+    image: registry.gitlab.com/daniellaera1/perimetre/backend:${BACKEND_TAG:-latest}
+    restart: always
+    logging: *default-logging
+    depends_on:
+      db:
+        condition: service_healthy
+    # SPRING_PROFILES_ACTIVE, DB_URL, DB_USER, DB_PASSWORD, FIREBASE_CREDENTIALS,
+    # ADMIN_TOKEN. application-prod.yml has no defaults, so a missing one fails
+    # the startup; AdminSecurityConfig refuses an ADMIN_TOKEN under 32 chars.
+    env_file: .env.prod
+    environment:
+      # Log timestamps in the zone the cron jobs run in (ImportJob pins its own zone).
+      TZ: Europe/Zurich
+    volumes:
+      # Firebase service account (600, uid 1000 = ubuntu = the image's user).
+      - ./secrets:/secrets:ro
+    # Heap = 50 % (JAVA_TOOL_OPTIONS in the Dockerfile) = 768 MB. A full import
+    # holds ~21 pages of GeoJSON in memory before writing.
+    mem_limit: 1536m
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8090/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+  db:
+    image: imresamu/postgis:17-3.5@sha256:35fe7dceda62bfe7d2965b0ba78d915ff9f901b5e0466d633ecc58421b5b5210
+    restart: always
+    logging: *default-logging
+    # terse: no DETAIL in Postgres's own log, where a constraint violation
+    # prints the offending row (push tokens included).
+    command: ["postgres", "-c", "log_error_verbosity=terse"]
+    environment:
+      POSTGRES_DB: perimetre
+      POSTGRES_USER: ${DB_USER:?DB_USER must be set}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  db_data:
+  caddy_data:
+  caddy_config:

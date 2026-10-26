@@ -1,5 +1,6 @@
 .env
 .env.*
+!.env.prod.example
 *.log
 .idea/
 .DS_Store

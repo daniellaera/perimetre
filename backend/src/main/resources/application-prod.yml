@@ -1,0 +1,26 @@
+# Production (deploy/docker-compose.prod.yml, env from /opt/perimetre/.env.prod).
+# No defaults here: a missing variable fails the startup instead of falling back
+# to the local values in application.yml. ADMIN_TOKEN is checked by AdminSecurityConfig.
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 5
+
+server:
+  # Caddy terminates TLS and sets X-Forwarded-*; the backend publishes no host port,
+  # so Caddy is the only client that can set them.
+  forward-headers-strategy: framework
+
+management:
+  endpoints:
+    web:
+      discovery:
+        enabled: false
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

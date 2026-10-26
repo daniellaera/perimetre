@@ -1,9 +1,14 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import 'models.dart';
 
-/// Backend base URL, set with `--dart-define=API_BASE_URL=...`.
-const apiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://localhost:8090');
+/// Backend base URL: `--dart-define=API_BASE_URL=...` when given, otherwise production in release
+/// builds and the local backend in debug and profile builds.
+const apiBaseUrl = String.fromEnvironment(
+  'API_BASE_URL',
+  defaultValue: kReleaseMode ? 'https://api.perimetre.ch' : 'http://localhost:8090',
+);
 
 class PerimetreApi {
   PerimetreApi(this._dio);

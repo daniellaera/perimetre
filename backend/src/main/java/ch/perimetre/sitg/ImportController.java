@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-// TODO: bind to admin auth once security is in place.
+// /admin/** is guarded by the ADMIN_TOKEN bearer filter (ch.perimetre.admin).
 @RestController
 class ImportController {
 

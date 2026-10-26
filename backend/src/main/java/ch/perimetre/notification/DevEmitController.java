@@ -18,10 +18,10 @@ import ch.perimetre.event.NewEvent;
 import ch.perimetre.subscription.SubscriptionRequest;
 
 /**
- * Dev profile only: fabricates an event for an existing dossier and dispatches it, to exercise the push
+ * Dev profile only (never together with prod): fabricates an event for an existing dossier and dispatches it, to exercise the push
  * pipeline without waiting for SITG. The dossier row itself is not modified.
  */
-@Profile("dev")
+@Profile("dev & !prod")
 @RestController
 class DevEmitController {
 

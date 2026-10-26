@@ -1,0 +1,5 @@
+# Never in the build context: the Firebase key is mounted at run time.
+.secrets/
+build/
+.gradle/
+*.log

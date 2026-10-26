@@ -1,0 +1,43 @@
+# Périmètre — CI: builds and pushes the backend image, never deploys.
+#
+# Deployment stays manual (deploy/ship.sh, or the `ship` skill), like DealJE.
+# On every push to main: registry.gitlab.com/daniellaera1/perimetre/backend
+# tagged :<short-sha> and :latest. Other branches run nothing.
+#
+# Shared (instance) runners: the homelab runner is a DealJE project runner,
+# not available here. The image build needs no database: the tests run on the
+# Mac against the local PostGIS before a push (see CLAUDE.md, "Tests").
+
+stages:
+  - build
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+backend-image:
+  stage: build
+  image: docker:27
+  services:
+    - name: docker:27-dind
+      alias: docker
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    IMAGE: $CI_REGISTRY_IMAGE/backend
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    # The previous :latest seeds the layer cache (Gradle dependencies), when there is one.
+    - docker pull "$IMAGE:latest" || true
+    - >
+      docker build
+      --cache-from "$IMAGE:latest"
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      --label org.opencontainers.image.revision="$CI_COMMIT_SHA"
+      --label org.opencontainers.image.source="$CI_PROJECT_URL"
+      -t "$IMAGE:$CI_COMMIT_SHORT_SHA"
+      -t "$IMAGE:latest"
+      backend
+    - docker push "$IMAGE:$CI_COMMIT_SHORT_SHA"
+    - docker push "$IMAGE:latest"
+  interruptible: true
