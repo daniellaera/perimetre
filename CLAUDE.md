@@ -145,9 +145,13 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   subscription with `ST_DWithin(sub.geom::geography, dossier.geom::geography, 1000) AND
   ST_DWithin(…, sub.radius_m) AND new_groupe = ANY(categories)`, `ON CONFLICT (subscription_id,
   event_id) DO NOTHING`; then send the PENDING rows of those events, grouped by **device**. The constant
-  1000 m (max radius) predicate is what makes the planner probe `subscription_geog_gist`: `radius_m`
-  belongs to the indexed table, so the exact check alone is no index condition (measured 2026-10-26,
-  10k subscriptions × 200 events: 1185 ms seq-scan nested loop → 155 ms index scan).
+  max-radius predicate is what makes the planner probe `subscription_geog_gist`: `radius_m` belongs to
+  the indexed table, so the exact check alone is no index condition (measured 2026-10-26, 10k
+  subscriptions × 200 events: 1185 ms seq-scan nested loop → 155 ms index scan). That constant is
+  `SubscriptionInput.MAX_RADIUS_M` (with `MIN_RADIUS_M`, the single source of the radius bounds, also
+  used by the request validation), so it can never be smaller than an accepted radius; the V3 CHECK on
+  `radius_m` must say the same, which `MatchingRadiusIntegrationTest` asserts. Raising the maximum = the
+  constant + a migration changing the CHECK + the app's slider.
 - **Per device and run** (`PushPlanner`): notifications are grouped by event first, so an event
   matching several subscriptions of one device is ONE push (all its rows marked by it). ≤ 3 events → one
   push per event; > 3 → ONE summary push and all rows marked SENT together. So at most 3 pushes per
@@ -410,14 +414,17 @@ Setup (once per Firebase project; Android still needs steps 1 and 3):
   API mapped onto devices (same id, token refresh, label vs address, delete), one push per event and
   device naming both perimeters + device feed. `ImportJobRunTest` (SitgImporter mocked): `job_run` row
   on success and FAILED on exception, `/admin/job-runs` newest first.
+- `MatchingRadiusIntegrationTest`: a subscription at the maximum radius matches an event 1 m inside it (and
+  not one 1 m outside); the DB CHECK has the same bounds as `SubscriptionInput`; the API refuses max + 1.
 - `V6MigrationTest`: creates a throwaway database `perimetre_v6_migration_test` on the same server,
   migrates it to V5, seeds prod-like rows, migrates to the latest and checks ids, tokens, counters,
   label → address, notifications and cascades (dropped afterwards). A manual rehearsal on a copy of the
   local V5 DB (2026-10-26) matched too.
 - **On demand:** `PERIMETRE_PERF=1 ./gradlew test --tests '*DispatchPerformanceTest' -i` seeds 10k
-  subscriptions on 4k devices + 200 events (needs imported dossiers), prints the matching plan (must
-  show `subscription_geog_gist`) and the dispatch time, rolls back. 2026-10-26 on the Mac: matching
-  155 ms; dispatch 2.3 s for 29,531 notifications → 4,324 log pushes to 3,320 devices. With real FCM
+  subscriptions on 4k devices + 200 events (needs imported dossiers), prints the plan of the real
+  matching query (`NotificationRepository.MATCHING`; must show `subscription_geog_gist`) and the dispatch
+  time, rolls back. 2026-10-26 on the Mac: matching 121–155 ms; dispatch 2.3–2.4 s for ~29.5k
+  notifications → ~4.3k log pushes to ~3.3k devices. With real FCM
   the sends are sequential (one HTTP call each), which dominates at that scale.
 - README screenshots (local backend, dev profile; fabricates 4 events): `cd app && flutter drive
   --driver=test_driver/screenshots.dart --target=integration_test/screenshots_test.dart -d <simulator id>`,

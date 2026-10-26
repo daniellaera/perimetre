@@ -1,5 +1,7 @@
 package ch.perimetre.notification;
 
+import static ch.perimetre.subscription.SubscriptionInput.MAX_RADIUS_M;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -12,23 +14,26 @@ import ch.perimetre.event.EventKind;
 @Repository
 class NotificationRepository {
 
-    /** The largest subscription radius (CHECK on subscription.radius_m). */
-    static final int MAX_RADIUS_M = 1000;
-
     // The constant MAX_RADIUS_M ST_DWithin is what lets the planner probe subscription_geog_gist (same
     // geom::geography expression) once per event: s.radius_m belongs to the indexed table, so the exact
     // per-subscription check alone cannot be an index condition and falls back to subscriptions × events.
-    private static final String CREATE_PENDING = """
-            INSERT INTO notification (subscription_id, event_id, status)
-            SELECT s.id, e.id, 'PENDING'
+    // The prefilter must never be smaller than any stored radius, hence the validation's own bound.
+    /** (subscription, event) pairs within the subscription's radius and categories. */
+    static final String MATCHING = """
+            SELECT s.id AS subscription_id, e.id AS event_id
             FROM event e
             JOIN dossier d ON d.id_dossier = e.id_dossier
             JOIN subscription s ON ST_DWithin(s.geom::geography, d.geom::geography, %d)
                                AND ST_DWithin(s.geom::geography, d.geom::geography, s.radius_m)
             WHERE e.id = ANY(CAST(:eventIds AS bigint[]))
               AND e.new_groupe = ANY(s.categories)
-            ON CONFLICT (subscription_id, event_id) DO NOTHING
             """.formatted(MAX_RADIUS_M);
+
+    private static final String CREATE_PENDING = """
+            INSERT INTO notification (subscription_id, event_id, status)
+            SELECT subscription_id, event_id, 'PENDING' FROM (%s) matching
+            ON CONFLICT (subscription_id, event_id) DO NOTHING
+            """.formatted(MATCHING);
 
     private static final String FIND_PENDING = """
             SELECT n.id AS notification_id, s.device_id, s.id AS subscription_id, v.push_token,

@@ -25,10 +25,18 @@ public record SubscriptionInput(
         // Canton of Geneva bounding box (with a small margin).
         @NotNull @DecimalMin("46.12") @DecimalMax("46.38") Double lat,
         @NotNull @DecimalMin("5.94") @DecimalMax("6.32") Double lng,
-        @NotNull @Min(100) @Max(1000) Integer radiusM,
+        @NotNull @Min(MIN_RADIUS_M) @Max(MAX_RADIUS_M) Integer radiusM,
         @Size(min = 1, max = 5) List<@NotNull Groupe> categories,
         @Size(max = 40) String label,
         @Size(max = 200) String address) {
+
+    /**
+     * Radius bounds in metres, the single source for request validation (here and in the legacy request) and
+     * the matching prefilter ({@code NotificationRepository}). The CHECK on {@code subscription.radius_m} must
+     * say the same: {@code MatchingRadiusIntegrationTest} fails when it does not.
+     */
+    public static final int MIN_RADIUS_M = 100;
+    public static final int MAX_RADIUS_M = 1000;
 
     @AssertTrue(message = Categories.INVALID_MESSAGE)
     boolean isCategoriesValid() {

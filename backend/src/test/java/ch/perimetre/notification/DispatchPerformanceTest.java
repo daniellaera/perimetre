@@ -15,7 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * On demand only ({@code PERIMETRE_PERF=1 ./gradlew test --tests '*DispatchPerformanceTest' -i}): seeds 10,000
  * synthetic subscriptions on 4,000 devices over Geneva's urban area, plus events for 200 recent dossiers of the
- * local DB, then times the nightly matching and dispatch (LogPushSender) and prints the matching query's plan.
+ * local DB, then times the nightly matching and dispatch (LogPushSender) and prints the plan of the matching query
+ * ({@link NotificationRepository#MATCHING}, the SELECT inside the INSERT, so EXPLAIN ANALYZE writes nothing).
  * Needs the local DB with imported dossiers; everything is rolled back.
  */
 @EnabledIfEnvironmentVariable(named = "PERIMETRE_PERF", matches = "1")
@@ -27,17 +28,6 @@ class DispatchPerformanceTest {
     private static final int DEVICES = 4_000;
     private static final int SUBSCRIPTIONS = 10_000;
     private static final int EVENTS = 200;
-
-    // CREATE_PENDING's matching part (NotificationRepository), as a SELECT so EXPLAIN ANALYZE writes nothing.
-    private static final String MATCHING = """
-            SELECT s.id, e.id
-            FROM event e
-            JOIN dossier d ON d.id_dossier = e.id_dossier
-            JOIN subscription s ON ST_DWithin(s.geom::geography, d.geom::geography, 1000)
-                               AND ST_DWithin(s.geom::geography, d.geom::geography, s.radius_m)
-            WHERE e.id = ANY(CAST(:eventIds AS bigint[]))
-              AND e.new_groupe = ANY(s.categories)
-            """;
 
     @Autowired
     JdbcClient jdbc;
@@ -78,7 +68,7 @@ class DispatchPerformanceTest {
         jdbc.sql("ANALYZE event").update();
 
         Long[] ids = eventIds.toArray(Long[]::new);
-        List<String> plan = jdbc.sql("EXPLAIN (ANALYZE, BUFFERS) " + MATCHING).param("eventIds", ids)
+        List<String> plan = jdbc.sql("EXPLAIN (ANALYZE, BUFFERS) " + NotificationRepository.MATCHING).param("eventIds", ids)
                 .query(String.class).list();
         System.out.println("=== Matching plan (" + SUBSCRIPTIONS + " subscriptions, " + eventIds.size() + " events)");
         plan.forEach(System.out::println);

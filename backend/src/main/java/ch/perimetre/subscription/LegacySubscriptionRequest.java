@@ -28,7 +28,7 @@ public record LegacySubscriptionRequest(
         // Canton of Geneva bounding box (with a small margin).
         @NotNull @DecimalMin("46.12") @DecimalMax("46.38") Double lat,
         @NotNull @DecimalMin("5.94") @DecimalMax("6.32") Double lng,
-        @NotNull @Min(100) @Max(1000) Integer radiusM,
+        @NotNull @Min(SubscriptionInput.MIN_RADIUS_M) @Max(SubscriptionInput.MAX_RADIUS_M) Integer radiusM,
         @Size(min = 1, max = 5) List<@NotNull Groupe> categories,
         @Size(max = 200) String label) {
 
