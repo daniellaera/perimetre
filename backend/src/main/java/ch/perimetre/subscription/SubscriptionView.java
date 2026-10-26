@@ -9,16 +9,16 @@ import tools.jackson.databind.annotation.JsonNaming;
 
 import ch.perimetre.dossier.Groupe;
 
-/** The push token is deliberately not echoed back. */
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record SubscriptionView(
         UUID id,
-        String platform,
+        UUID deviceId,
+        String label,
+        String address,
         double lat,
         double lng,
         int radiusM,
         List<Groupe> categories,
-        String label,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt) {
 }

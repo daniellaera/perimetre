@@ -1,7 +1,6 @@
 package ch.perimetre.subscription;
 
 import java.util.List;
-import java.util.Set;
 
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
@@ -18,9 +17,12 @@ import tools.jackson.databind.annotation.JsonNaming;
 
 import ch.perimetre.dossier.Groupe;
 
-/** Body of POST and PUT /subscriptions. {@code categories} defaults to all five notifiable groupes. */
+/**
+ * Body of the legacy POST and PUT /subscriptions (single-subscription app, 2026-10). The app sends the chosen
+ * address as {@code label}: it is stored in {@code subscription.address}.
+ */
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-public record SubscriptionRequest(
+public record LegacySubscriptionRequest(
         @NotBlank @Size(max = 4096) String pushToken,
         @Pattern(regexp = "ios|android") String platform,
         // Canton of Geneva bounding box (with a small margin).
@@ -30,20 +32,16 @@ public record SubscriptionRequest(
         @Size(min = 1, max = 5) List<@NotNull Groupe> categories,
         @Size(max = 200) String label) {
 
-    public static final List<Groupe> NOTIFIABLE =
-            List.of(Groupe.DEPOSE, Groupe.AUTORISE, Groupe.CHANTIER, Groupe.RECOURS, Groupe.REFUSE);
-
-    /** Requested categories, de-duplicated in canonical order, or all of them when absent. */
-    public List<Groupe> categoriesOrDefault() {
-        if (categories == null) {
-            return NOTIFIABLE;
-        }
-        Set<Groupe> requested = Set.copyOf(categories);
-        return NOTIFIABLE.stream().filter(requested::contains).toList();
+    @AssertTrue(message = Categories.INVALID_MESSAGE)
+    boolean isCategoriesValid() {
+        return Categories.isValid(categories);
     }
 
-    @AssertTrue(message = "categories must be among DEPOSE, AUTORISE, CHANTIER, RECOURS, REFUSE")
-    boolean isCategoriesValid() {
-        return categories == null || NOTIFIABLE.containsAll(categories);
+    SubscriptionInput toInput() {
+        return new SubscriptionInput(lat, lng, radiusM, categories, null, label);
+    }
+
+    DeviceRequest toDevice() {
+        return new DeviceRequest(pushToken, platform);
     }
 }
