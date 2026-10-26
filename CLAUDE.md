@@ -7,6 +7,28 @@ within that radius.
 - `backend/`: Spring Boot 4, Java 21, Gradle (Groovy DSL), base package `ch.perimetre`
 - `app/`: Flutter, iOS first (Android must compile), two tabs: Explorer and Mon périmètre (see "App" below)
 
+## Status / next steps (2026-10-26)
+
+Prod is live (see "Production"): image `caea82fb`, 20,902 dossiers, FCM verified. Leave prod as is
+until the validation nights are done: no deploys.
+
+1. **3 validation nights in progress: 2026-10-27, -28, -29 at 03:15** (Sunday 11-01 adds the 03:45
+   full run). Each morning check:
+   - `curl -s -H "Authorization: Bearer $(ssh perimetre-prod "grep '^ADMIN_TOKEN=' /opt/perimetre/.env.prod | cut -d= -f2-")" 'https://api.perimetre.ch/admin/job-runs?limit=5'`:
+     a SCHEDULED `import-incremental` row per night, `status` SUCCESS, `fcm_errors` 0; `changed` and
+     `pushes` say whether anything was notified.
+   - healthchecks.io: the check got `/start` + success around 03:15 (Daniel's account).
+   - Pushes reached the test subscription `33333333-3333-4333-8333-333333333333` (Rue du Rhône 1,
+     500 m, the densest zone: ~160 changes / 30 days): `notification` rows SENT with an `fcm_message_id`.
+     It lives on the iPhone 17 Pro simulator (`BE879EBC-…`), shut down but **never uninstall the app or
+     erase that simulator**: its FCM token is the subscription's. Boot it to see delivered pushes.
+2. **Manual items (Daniel):** GitLab registry deploy token + `docker login` on the box (until then
+   deploys go via `docker save | ssh … docker load` + `ship.sh --no-pull`); restic to Swiss Backup;
+   `www.perimetre.ch` A record (then `docker restart perimetre-caddy-1`). Steps in "Production".
+3. **Then:** a proper map tile provider (OSM public tiles are dev only), TestFlight build (release
+   builds already default to `https://api.perimetre.ch`), public GitHub repo (check no secret is in the
+   history first), announcement to SITG.
+
 ## Local environment
 
 - `docker compose up -d` starts PostGIS 17 (`perimetre-db`, perimetre/perimetre@localhost:5433,
