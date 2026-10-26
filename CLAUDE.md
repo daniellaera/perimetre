@@ -345,7 +345,9 @@ integration_test/subscription_flow_test.dart   simulator E2E against the local b
 - iOS `Info.plist` sets `NSAllowsLocalNetworking` for plain-http localhost. Android main manifest
   declares INTERNET and an https VIEW `<queries>` entry for url_launcher.
 - OSM's public tile servers are fine for development only (tile usage policy). Switch to a proper
-  tile provider before release.
+  tile provider before release: **open decision**, see `docs/map-tiles.md` (swisstopo evaluated
+  2026-10-26 and rejected: blank on the French side at z17+, no dark style; recommendation OpenFreeMap
+  vector, no account, or Mapbox raster).
 - **Details sheet title:** when the short label is "Demande", the description is the title and the
   "Demande" heading is dropped (the description is then not repeated below).
 - **Mes périmètres:** without a subscription, the tab is the form: optional name (`ChoiceChip`s
