@@ -30,9 +30,10 @@ WORKDIR /app
 # Owned by root, read-only to the app.
 COPY --from=build /app.jar app.jar
 
-# The heap follows the container's mem_limit (50 %), not the host. Exit on
-# OutOfMemoryError so restart: always brings back a clean JVM.
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=50 -XX:+ExitOnOutOfMemoryError"
+# The heap follows the container's mem_limit (75 %), not the host. Exit on
+# OutOfMemoryError so restart: always brings back a clean JVM. Prod's compose
+# file sets the same value explicitly.
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
 
 USER 1000:1000
 EXPOSE 8090

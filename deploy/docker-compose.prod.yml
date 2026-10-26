@@ -4,7 +4,12 @@
 #   docker compose -f docker-compose.prod.yml --env-file .env.prod <command>
 #
 # Only Caddy publishes ports. The backend and Postgres are reachable on the
-# compose network alone, so X-Forwarded-* can only come from Caddy.
+# compose network alone, so X-Forwarded-* can only come from Caddy. Never add
+# `ports:` to db or backend: Docker's published ports bypass ufw/iptables
+# INPUT rules. There is no Redis in prod.
+#
+# Memory on the 4 GB VPS (plus 2 GB swap): backend 1.5 GB + db 1.25 GB +
+# caddy 256 MB = ~3 GB, leaving ~0.9 GB for the OS and the page cache.
 name: perimetre
 
 # Every container's log is capped (Docker's json-file default has no limit).
@@ -52,11 +57,14 @@ services:
       # Log timestamps in the zone the cron jobs run in. The @Scheduled crons
       # pin zone = "Europe/Zurich" themselves and do not depend on it.
       TZ: Europe/Zurich
+      # Heap = 75 % of mem_limit (~1.1 GB); the rest is metaspace, threads and
+      # buffers. Exit on OOM so restart: always brings back a clean JVM.
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
     volumes:
       # Firebase service account (600, uid 1000 = ubuntu = the image's user).
       - ./secrets:/secrets:ro
-    # Heap = 50 % (JAVA_TOOL_OPTIONS in the Dockerfile) = 768 MB. A full import
-    # holds ~21 pages of GeoJSON in memory before writing.
+    # A full import holds ~21 pages of GeoJSON (~21k features) in memory
+    # before writing.
     mem_limit: 1536m
     healthcheck:
       test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8090/actuator/health"]
@@ -74,7 +82,26 @@ services:
     # cluster was initialised in UTC and keeps that in postgresql.conf, so TZ
     # alone would not change the log. The session `timezone` stays UTC; the
     # backend's JDBC sessions use the JVM's zone anyway.
-    command: ["postgres", "-c", "log_error_verbosity=terse", "-c", "log_timezone=Europe/Zurich"]
+    #
+    # Memory: shared_buffers 512 MB holds the whole dataset (~21k dossiers,
+    # tens of MB with indexes) many times over. work_mem 16 MB: the import's
+    # heaviest statement is one `id_dossier = ANY(<21k ids>)` lookup on the
+    # primary key plus 500-row upsert batches, none of which sorts or hashes
+    # more than a few MB; 16 MB x 5 Hikari connections stays small.
+    command:
+      - postgres
+      - -c
+      - log_error_verbosity=terse
+      - -c
+      - log_timezone=Europe/Zurich
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=128MB
     environment:
       TZ: Europe/Zurich
       POSTGRES_DB: perimetre
@@ -82,7 +109,11 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
     volumes:
       - db_data:/var/lib/postgresql/data
-    mem_limit: 1g
+    # Docker's default /dev/shm is 64 MB; parallel queries allocate their
+    # dynamic shared memory there.
+    shm_size: 256m
+    # shared_buffers (512 MB, counted once touched) + backends + maintenance.
+    mem_limit: 1280m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
