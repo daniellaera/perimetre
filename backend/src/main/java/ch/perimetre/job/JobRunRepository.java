@@ -2,6 +2,7 @@ package ch.perimetre.job;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -39,10 +40,10 @@ public class JobRunRepository {
     public void finish(long id, Status status, Counters counters, String errorMessage) {
         jdbc.sql("""
                 UPDATE job_run SET finished_at = now(), status = ?, fetched = ?, changed = ?, notified = ?,
-                       pushes = ?, fcm_errors = ?, error_message = ?
+                       pushes = ?, fcm_errors = ?, max_date_maj_sitg = ?, error_message = ?
                 WHERE id = ?""")
                 .params(status.name(), counters.fetched(), counters.changed(), counters.notified(),
-                        counters.pushes(), counters.fcmErrors(), truncate(errorMessage), id)
+                        counters.pushes(), counters.fcmErrors(), counters.maxDateMajSitg(), truncate(errorMessage), id)
                 .update();
     }
 
@@ -83,6 +84,7 @@ public class JobRunRepository {
                 rs.getObject("notified", Integer.class),
                 rs.getObject("pushes", Integer.class),
                 rs.getObject("fcm_errors", Integer.class),
+                rs.getObject("max_date_maj_sitg", LocalDate.class),
                 rs.getString("error_message"));
     }
 

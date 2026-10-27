@@ -28,9 +28,10 @@ public class SitgImporter {
     private static final Logger log = LoggerFactory.getLogger(SitgImporter.class);
 
     static final String SOURCE = "SIT_AUTOR_DOSSIER";
-    // date_maj_2 is date-only and lags publication by ~1 day; 3 days of overlap absorbs that.
+    // date_maj_2 is date-only and a day's batch is published the next morning; 3 days of overlap absorb that and
+    // a publication up to 2 days late (LatePublicationTest).
     private static final Duration CURSOR_OVERLAP = Duration.ofDays(3);
-    // date_maj_2 does not reliably move on statut changes; the full pass re-reads everything since then.
+    // Safety net: the weekly full pass re-reads everything modified since then, whatever the cursor missed.
     private static final Instant FULL_SINCE = Instant.parse("2025-01-01T00:00:00Z");
 
     private final SitgClient client;
@@ -48,9 +49,12 @@ public class SitgImporter {
         this.tx = tx;
     }
 
-    /** {@code eventIds} are the events created by this run, for the notification dispatcher. */
+    /**
+     * {@code eventIds} are the events created by this run, for the notification dispatcher;
+     * {@code maxDateMaj} the newest {@code date_maj_2} fetched (null when nothing was), for the freshness check.
+     */
     public record ImportResult(ImportMode mode, long fetched, long inserted, long updated, List<Long> eventIds,
-            long durationMs) {
+            LocalDate maxDateMaj, long durationMs) {
     }
 
     private record SyncState(Instant lastRun, boolean bootstrapped) {
@@ -69,7 +73,7 @@ public class SitgImporter {
                         rs.getObject("last_run", OffsetDateTime.class).toInstant(), rs.getBoolean("bootstrapped")))
                 .single();
         try {
-            Instant since = mode == ImportMode.FULL ? FULL_SINCE : state.lastRun().minus(CURSOR_OVERLAP);
+            Instant since = mode == ImportMode.FULL ? FULL_SINCE : cursor(state.lastRun());
             log.info("SITG {} import starting, last_run={} since={} bootstrapped={}",
                     mode, state.lastRun(), since, state.bootstrapped());
 
@@ -85,7 +89,7 @@ public class SitgImporter {
                         .param(SOURCE)
                         .update();
                 return new ImportResult(mode, features.size(), rows.size() - existing.size(), existing.size(),
-                        eventIds, elapsedMs(start));
+                        eventIds, maxDateMaj(rows), elapsedMs(start));
             });
             log.info("SITG import done: mode={} fetched={} inserted={} updated={} events={}{} durationMs={}",
                     mode, result.fetched(), result.inserted(), result.updated(), result.eventIds().size(),
@@ -95,6 +99,19 @@ public class SitgImporter {
             log.error("SITG {} import failed after {} ms; cursor left at {}", mode, elapsedMs(start), state.lastRun(), e);
             throw e;
         }
+    }
+
+    /** The incremental query's lower bound on {@code date_maj_2}, given the previous run's {@code last_run}. */
+    static Instant cursor(Instant lastRun) {
+        return lastRun.minus(CURSOR_OVERLAP);
+    }
+
+    /** The newest {@code date_maj_2} (date-only, midnight UTC) among {@code rows}, null when there are none. */
+    static LocalDate maxDateMaj(List<Dossier> rows) {
+        return rows.stream()
+                .map(d -> d.dateMajSitg().withOffsetSameInstant(ZoneOffset.UTC).toLocalDate())
+                .max(LocalDate::compareTo)
+                .orElse(null);
     }
 
     private static List<Dossier> toDossiers(List<SitgPage.Feature> features) {

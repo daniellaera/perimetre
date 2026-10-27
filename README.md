@@ -7,7 +7,7 @@ Périmètre is a small civic app for the canton of Geneva (Switzerland). Pick on
 is filed in that perimeter, or when one changes status: authorised, construction starting, appealed,
 refused. An *Explorer* tab shows every open dossier around any address on a map.
 
-No account and no ads. The data is the canton's official open data, refreshed every night.
+No account and no ads. The data is the canton's official open data, refreshed daily.
 
 | Explorer | Dossier | My perimeters | New perimeter |
 |---|---|---|---|
@@ -20,7 +20,7 @@ the dev endpoint. The app is in French.)*
 
 ```
  SITG open data (ArcGIS FeatureServer, SIT_AUTOR_DOSSIER)
-        │  nightly 03:15 incremental import, Sunday 03:45 full refresh
+        │  daily 10:15 incremental import, Sunday 10:45 full refresh (after SITG's morning publication)
         ▼
  ┌───────────────────────────── backend (Spring Boot 4, Java 21) ─────────────────────────────┐
  │ import ─► upsert dossiers ─► detect events (new dossier, status group change)               │
@@ -162,8 +162,10 @@ The reference deployment runs on one VPS (2 vCPU, 4 GB RAM, Ubuntu 24.04) for th
    pulls the image, restarts and waits for health. Then run the first import:
    `curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" https://api.<domain>/admin/import?mode=full`.
    That run records a baseline and sends no notifications.
-6. **Operations:** imports run at 03:15 (incremental) and Sundays 03:45 (full), Europe/Zurich.
-   `GET /admin/job-runs` lists the runs. The optional `HEALTHCHECK_PING_URL` alerts you when a nightly run
+6. **Operations:** imports run at 10:15 (incremental) and Sundays 10:45 (full), Europe/Zurich
+   (`IMPORT_INCREMENTAL_CRON` / `IMPORT_FULL_CRON` to change them). A run that finds no SITG data newer than
+   3 days ends `STALE_SOURCE`.
+   `GET /admin/job-runs` lists the runs. The optional `HEALTHCHECK_PING_URL` alerts you when a scheduled run
    is missing or fails. `deploy/backup.sh` keeps 14 days of `pg_dump`; copy them off the server.
 7. **App:** build with `--dart-define=API_BASE_URL=https://api.<domain>`, your bundle id, your Firebase
    config and your own Mapbox token (see "Map tokens"). Publish your own privacy page: the template in

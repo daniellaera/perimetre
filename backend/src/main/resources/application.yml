@@ -23,6 +23,13 @@ management:
       show-details: always
 
 perimetre:
+  import:
+    # Europe/Zurich (the zone is fixed in ImportJob). SITG publishes each day's batch the next morning
+    # before 09:16; a late batch is still fetched by the 3-day window (LatePublicationTest). Keep the
+    # healthchecks.io check's schedule in line with this one.
+    incremental-cron: ${IMPORT_INCREMENTAL_CRON:0 15 10 * * *}
+    # The weekly full refresh, after the incremental of the same morning.
+    full-cron: ${IMPORT_FULL_CRON:0 45 10 * * SUN}
   subscriptions:
     # Technical safety cap per device (app installation); POST /devices/{id}/subscriptions answers 409 above it.
     max-per-device: ${SUBSCRIPTIONS_MAX_PER_DEVICE:25}

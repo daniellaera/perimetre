@@ -1,6 +1,9 @@
 package ch.perimetre.sitg;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.Locale;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -22,12 +25,15 @@ import ch.perimetre.notification.NotificationDispatcher.DispatchResult;
 /**
  * Import followed by notification dispatch; scheduled, and serialised by an in-process lock. Every run
  * writes one {@code job_run} row and one INFO summary line; scheduled runs also ping HEALTHCHECK_PING_URL.
+ * A run whose newest fetched {@code date_maj_2} is older than {@link #MAX_SOURCE_AGE} ends STALE_SOURCE
+ * (pinged as a failure): SITG normally publishes every day.
  */
 @Component
 class ImportJob {
 
     private static final Logger log = LoggerFactory.getLogger(ImportJob.class);
     private static final String ZONE = "Europe/Zurich";
+    static final Duration MAX_SOURCE_AGE = Duration.ofDays(3);
 
     private final SitgImporter importer;
     private final NotificationDispatcher dispatcher;
@@ -54,12 +60,14 @@ class ImportJob {
         }
     }
 
-    @Scheduled(cron = "0 15 3 * * *", zone = ZONE)
+    // Both crons are set in application.yml (env IMPORT_INCREMENTAL_CRON / IMPORT_FULL_CRON), after SITG's
+    // morning publication. The zone stays fixed here: ScheduledZoneTest checks it.
+    @Scheduled(cron = "${perimetre.import.incremental-cron}", zone = ZONE)
     void scheduledIncremental() {
         runScheduled(ImportMode.INCREMENTAL);
     }
 
-    @Scheduled(cron = "0 45 3 * * SUN", zone = ZONE)
+    @Scheduled(cron = "${perimetre.import.full-cron}", zone = ZONE)
     void scheduledFull() {
         runScheduled(ImportMode.FULL);
     }
@@ -89,6 +97,7 @@ class ImportJob {
             pinger.start();
         }
         long start = System.nanoTime();
+        Instant startedAt = Instant.now();
         Long runId = null;
         try {
             runId = runs.start(jobName, trigger);
@@ -102,18 +111,28 @@ class ImportJob {
                 dispatched = DispatchResult.NONE;
                 dispatchError = "dispatch failed: " + e;
             }
-            Status status = dispatchError == null ? Status.SUCCESS : Status.DISPATCH_FAILED;
+            String staleError = isStale(imported.maxDateMaj(), startedAt)
+                    ? "stale source: newest date_maj_2 " + imported.maxDateMaj() + " is older than "
+                            + MAX_SOURCE_AGE.toDays() + " days"
+                    : null;
+            Status status = dispatchError != null ? Status.DISPATCH_FAILED
+                    : staleError != null ? Status.STALE_SOURCE : Status.SUCCESS;
+            String error = dispatchError != null ? dispatchError : staleError;
             Counters counters = new Counters(Math.toIntExact(imported.fetched()), imported.eventIds().size(),
-                    dispatched.notifications(), dispatched.pushes(), dispatched.pushErrors());
-            runs.finish(runId, status, counters, dispatchError);
+                    dispatched.notifications(), dispatched.pushes(), dispatched.pushErrors(), imported.maxDateMaj());
+            runs.finish(runId, status, counters, error);
             long durationMs = elapsedMs(start);
             String summary = summary(runId, jobName, trigger, status, counters, durationMs);
-            log.info(summary);
+            if (status == Status.STALE_SOURCE) {
+                log.warn("{} ({})", summary, staleError);
+            } else {
+                log.info(summary);
+            }
             if (ping) {
                 if (status == Status.SUCCESS) {
                     pinger.success(summary);
                 } else {
-                    pinger.fail(summary + "\n" + dispatchError);
+                    pinger.fail(summary + "\n" + error);
                 }
             }
             return new RunResult(runId, mode, imported.fetched(), imported.inserted(), imported.updated(),
@@ -148,11 +167,21 @@ class ImportJob {
         }
     }
 
+    /**
+     * True when the newest {@code date_maj_2} a run fetched (midnight UTC) is more than {@link #MAX_SOURCE_AGE}
+     * before {@code runStart}, or when it fetched nothing: the incremental window alone spans 3 days.
+     */
+    static boolean isStale(LocalDate maxDateMaj, Instant runStart) {
+        return maxDateMaj == null
+                || maxDateMaj.atStartOfDay(ZoneOffset.UTC).toInstant().isBefore(runStart.minus(MAX_SOURCE_AGE));
+    }
+
     private static String summary(Long runId, String jobName, Trigger trigger, Status status, Counters c,
             long durationMs) {
-        return "Job run %s %s (%s) %s: fetched=%s changed=%s notified=%s pushes=%s fcm_errors=%s durationMs=%d"
+        return ("Job run %s %s (%s) %s: fetched=%s changed=%s notified=%s pushes=%s fcm_errors=%s max_date_maj=%s"
+                + " durationMs=%d")
                 .formatted(runId == null ? "-" : runId, jobName, trigger, status, c.fetched(), c.changed(),
-                        c.notified(), c.pushes(), c.fcmErrors(), durationMs);
+                        c.notified(), c.pushes(), c.fcmErrors(), c.maxDateMajSitg(), durationMs);
     }
 
     private static long elapsedMs(long startNanos) {

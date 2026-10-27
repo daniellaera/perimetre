@@ -53,13 +53,16 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
 
 - **Query (mode `INCREMENTAL`):** `where = date_maj_2 >= TIMESTAMP '<cursor>' AND date_depot IS NOT NULL`,
   with `cursor = sync_state.last_run - 3 days` (source `SIT_AUTOR_DOSSIER`), formatted
-  `yyyy-MM-dd HH:mm:ss` in UTC. The 3-day overlap is deliberate: `date_maj_2` is date-only and lags
-  publication by ~1 day, so a 1-day overlap can miss dossiers stamped "yesterday" that are published
-  after a run. Re-fetching ~1–3k rows per run is cheap and the upsert is idempotent.
+  `yyyy-MM-dd HH:mm:ss` in UTC. The 3-day overlap is deliberate: `date_maj_2` is date-only and the batch
+  stamped day D is only published the next morning (see "Data facts"), so a short overlap can miss rows
+  published after a run. It also absorbs a publication up to 2 days late (the batch of D is fetched as long
+  as it appears before the run of D+3; `LatePublicationTest`); later than that only the weekly full catches
+  it. Re-fetching a few hundred rows per run is cheap and the upsert is idempotent.
 - **Query (mode `FULL`):** same import with `where = date_maj_2 >= TIMESTAMP '2025-01-01 00:00:00' AND
-  date_depot IS NOT NULL` (~21k rows, ~7 s). Reason: `date_maj_2` does not reliably move when the
-  `statut` changes (observed: statut changed on 21.09, `date_maj_2` stayed 27.08), so the incremental
-  cursor can miss groupe changes; the weekly full pass catches them. Events are detected the same way.
+  date_depot IS NOT NULL` (~21k rows, ~7 s). A safety net: a statut change does move `date_maj_2` (see
+  "Data facts") and a full pass right after an incremental found nothing more (2026-10-27), but one earlier
+  observation (statut changed on 21.09, `date_maj_2` stayed 27.08) says it may not always; the weekly full
+  pass catches any such miss. Events are detected the same way.
 - **Field mapping:** `id_dossier` (business key, PK) · `type_dossier` · `type_operation` · `operation` ·
   `description` · `statut` → `statut_sitg` · `date_depot` (epoch ms, UTC date) · `date_maj_2` →
   `date_maj_sitg` (epoch ms) · `lien_sad` · Point lon/lat → `geom` (`ST_SetSRID(ST_MakePoint(lon,lat),4326)`).
@@ -91,29 +94,48 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   - anything else (new dossier in another groupe, unchanged, change to IGNORE/TERMINE) → silent update
   - `sync_state.bootstrapped = false` → no events at all, then set to true. That covers the first
     import and any `docker compose down -v` reset (and the first import after V3 on an existing DB).
-- **Scheduling** (`ImportJob`, `@EnableScheduling`): incremental daily at 03:15, full on Sundays at
-  03:45, both `zone = "Europe/Zurich"`. An in-process `ReentrantLock.tryLock` serialises runs: a
+- **Scheduling** (`ImportJob`, `@EnableScheduling`): crons in `application.yml`, both with
+  `zone = "Europe/Zurich"` fixed in the annotation: `perimetre.import.incremental-cron` (env
+  `IMPORT_INCREMENTAL_CRON`, default daily 10:15) and `perimetre.import.full-cron` (env
+  `IMPORT_FULL_CRON`, default Sundays 10:45), i.e. after SITG's morning publication. Until 2026-10
+  they ran at 03:15 / 03:45, before it, which delayed every notification by a day. `LatePublicationTest`
+  checks the incremental runs daily and the full weekly, ≥ 10 min after that day's incremental. An in-process `ReentrantLock.tryLock` serialises runs: a
   scheduled run that finds it held logs a WARN and skips; `POST /admin/import` answers 409. Each run =
   import, then `NotificationDispatcher.dispatch(eventIds of that run)`. A dispatch failure is logged
   but does not fail the run (the import is committed; its notifications stay PENDING).
   **Every run** (scheduled or `/admin/import`) inserts a RUNNING `job_run` row, then sets SUCCESS,
-  FAILED (import threw: nothing written, counters null, `error_message`) or DISPATCH_FAILED (import
-  committed, dispatch threw), and logs one INFO line `Job run <id> <job_name> (<trigger>) <status>:
-  fetched= changed= notified= pushes= fcm_errors= durationMs=`. `changed` = events detected (NEW +
+  FAILED (import threw: nothing written, counters null, `error_message`), DISPATCH_FAILED (import
+  committed, dispatch threw) or STALE_SOURCE (see below), and logs one line `Job run <id> <job_name>
+  (<trigger>) <status>: fetched= changed= notified= pushes= fcm_errors= max_date_maj= durationMs=` (WARN
+  for STALE_SOURCE, else INFO). **Source freshness:** `max_date_maj_sitg` = the newest `date_maj_2` the
+  run fetched (V7). When it is more than 3 days (`ImportJob.MAX_SOURCE_AGE`) before the run's start, or
+  the run fetched nothing, a run that otherwise succeeded ends STALE_SOURCE (import and dispatch done as
+  usual, `error_message` says why) and a scheduled one pings `/fail`. DISPATCH_FAILED wins over it. On
+  SITG's history (2025-01 to 2026-10) a 10:15 run would have been STALE_SOURCE on 8 days: one real
+  5-day outage (2025-05-16 → 21) and single mornings after a 3-day gap in stamps (e.g. 2026-10-13), which
+  the 3-day window still caught. Over time the column also shows whether 10:15 gets each day's batch
+  (normally `max_date_maj` = the day before the run). `changed` = events detected (NEW +
   GROUPE_CHANGE), not upserted rows (every re-fetched row is "updated"). RUNNING rows found at startup
   (a restart mid-run) are marked FAILED. **Dead-man's switch** (`HealthcheckPinger`): with env
   `HEALTHCHECK_PING_URL` (healthchecks.io), scheduled runs only POST `<url>/start`, then `<url>` on
   SUCCESS or `<url>/fail` (summary as body); manual runs never ping. Unset/blank = no-op; a failed ping
-  is a WARN (without the URL) and never fails the run; 10 s timeouts.
+  is a WARN (without the URL) and never fails the run; 10 s timeouts. The healthchecks.io check's
+  schedule must match `perimetre.import.incremental-cron`.
   At startup `ScheduleReport` logs one `Scheduled … cron "…", next run …` line per registered cron task
   (read from the scheduler, next run in Europe/Zurich).
-- **HTTP:** `RestClient`, 60 s connect/read timeout, one retry on HTTP 5xx (SITG answers bad queries
-  with a 500 HTML maintenance page). ArcGIS `{"error":…}` bodies with HTTP 200 fail the import.
-  One INFO log line per page.
-- **Data facts (2026-10):** ~20.8k dossiers modified since 2025-01-01, ~1k/day. `date_maj_2` is
-  date-only (midnight UTC) and lags about one day behind publication.
+- **HTTP:** `RestClient` (JDK client), 60 s connect/read timeout. Per page, with a 2 s then 4 s backoff:
+  up to 3 attempts on an I/O error (connection reset, which SITG does now and then; timeout; truncated
+  body), one retry on HTTP 5xx (SITG answers bad queries with a 500 HTML maintenance page). ArcGIS
+  `{"error":…}` bodies with HTTP 200 fail the import without retry. One INFO log line per page.
+- **Data facts (2026-10):** ~20.9k dossiers modified since 2025-01-01 (~198k in the layer), 20–340
+  stamped per day (fewest on Sundays and Mondays). SITG reloads the whole layer daily (object ids are
+  always 1..n). `date_maj_2` is date-only (midnight UTC): the day of the dossier's last change, a statut
+  change included (all 19 statut changes seen over 46 h on 2026-10-25/27 moved it, even from months
+  back). The batch stamped D is published on the morning of D+1, before 09:16 Zurich (observed: the
+  10-26 batch was absent at 03:15 on 10-27 and present at 10:25; the 10-25 batch was there at 09:16 on
+  10-26), hence the 10:15 incremental.
 
-## Data model (Flyway V1–V6)
+## Data model (Flyway V1–V7)
 
 - `dossier`: one row per SITG dossier (see "SITG import"); `dossier_geog_gist` on `(geom::geography)`.
 - `sync_state(source PK, last_run, bootstrapped)`: one row, `SIT_AUTOR_DOSSIER`.
@@ -135,9 +157,10 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   `fcm_message_id` (V4) is FCM's answer to a sent push (`projects/<id>/messages/<uuid>`; a summary
   push stamps all its rows with the same id); null for `LogPushSender` and failed pushes.
 - `job_run(id, job_name import-incremental|import-full, trigger SCHEDULED|MANUAL, started_at,
-  finished_at, status RUNNING|SUCCESS|FAILED|DISPATCH_FAILED, fetched, changed, notified, pushes,
-  fcm_errors, error_message)` (V5): one row per import run, see "Scheduling". `trigger` and `pushes` are
-  not in the original spec. Counters are null on FAILED.
+  finished_at, status RUNNING|SUCCESS|FAILED|DISPATCH_FAILED|STALE_SOURCE, fetched, changed, notified,
+  pushes, fcm_errors, max_date_maj_sitg DATE, error_message)` (V5; V7 added `max_date_maj_sitg` and
+  STALE_SOURCE): one row per import run, see "Scheduling". `trigger` and `pushes` are not in the
+  original spec. Counters and `max_date_maj_sitg` are null on FAILED.
 
 ## Notifications (`ch.perimetre.notification`)
 
@@ -201,7 +224,7 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   idDossier, title, body, status, fcmMessageId, error}`; 404 for an unknown subscription or an empty
   radius. The way to check FCM on prod without waiting for 03:15.
 - `GET /admin/job-runs?limit=20` (1–200): `job_run` rows newest first (`started_at DESC, id DESC`),
-  snake_case, plus `duration_ms`.
+  snake_case, plus `duration_ms`; `status` and `max_date_maj_sitg` tell whether SITG's data was fresh.
 - **`/admin/**` auth** (`ch.perimetre.admin`): a servlet filter on `/admin/*` wants
   `Authorization: Bearer <ADMIN_TOKEN>` (env var), else 401 + `WWW-Authenticate: Bearer`. Both sides are
   SHA-256-hashed, then `MessageDigest.isEqual` (constant time, length included). Profile `prod` refuses
@@ -412,7 +435,9 @@ Setup (once per Firebase project; Android still needs steps 1 and 3):
 ## Tests
 
 - Unit: `SitgMappingTest` (statut → groupe, flags), `ChangeDetectorTest` (event rules incl.
-  bootstrap), `PushPlannerTest` (≤ 3 / > 3 summary rule counted in events, one push per event and
+  bootstrap), `SitgClientRetryTest` (reset, timeout, truncated body, 5xx and ArcGIS errors against a raw
+  local HTTP server), `LatePublicationTest` (configured crons + cursor: a batch published up to 2 days
+  late is still fetched, every day of 2026; full ≥ 10 min after the incremental), `PushPlannerTest` (≤ 3 / > 3 summary rule counted in events, one push per event and
   device), `PushMessagesTest` (payload wording, label vocabulary, truncation, place names, summary per
   place), `AdminTokenFilterTest` (bearer check, prod requires a ≥ 32-char token),
   `HealthcheckPingerTest` (no-op when unset, ping URLs, a failing ping never throws),
@@ -424,8 +449,10 @@ Setup (once per Firebase project; Android still needs steps 1 and 3):
   category filtering; validation; all through the legacy `/subscriptions` API. `DeviceApiIntegrationTest`
   (cap lowered to 3): device + subscription CRUD, 409 with code and French message, validation, legacy
   API mapped onto devices (same id, token refresh, label vs address, delete), one push per event and
-  device naming both perimeters + device feed. `ImportJobRunTest` (SitgImporter mocked): `job_run` row
-  on success and FAILED on exception, `/admin/job-runs` newest first.
+  device naming both perimeters + device feed. `ImportJobRunTest` (SitgImporter and the pinger
+  mocked): `job_run` row on success and FAILED on exception, STALE_SOURCE + `/fail` ping on a source
+  older than 3 days or an empty fetch, `/admin/job-runs` newest first with `max_date_maj_sitg`.
+  `SourceFreshnessTest` (unit): the 3-day boundary, newest date of a run.
 - `MatchingRadiusIntegrationTest`: a subscription at the maximum radius matches an event 1 m inside it (and
   not one 1 m outside); the DB CHECK has the same bounds as `SubscriptionInput`; the API refuses max + 1.
 - `V6MigrationTest`: creates a throwaway database `perimetre_v6_migration_test` on the same server,
