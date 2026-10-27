@@ -108,12 +108,13 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   committed, dispatch threw) or STALE_SOURCE (see below), and logs one line `Job run <id> <job_name>
   (<trigger>) <status>: fetched= changed= notified= pushes= fcm_errors= max_date_maj= durationMs=` (WARN
   for STALE_SOURCE, else INFO). **Source freshness:** `max_date_maj_sitg` = the newest `date_maj_2` the
-  run fetched (V7). When it is more than 3 days (`ImportJob.MAX_SOURCE_AGE`) before the run's start, or
+  run fetched (V7). When it is more than 4 days (`ImportJob.MAX_SOURCE_AGE`) before the run's start, or
   the run fetched nothing, a run that otherwise succeeded ends STALE_SOURCE (import and dispatch done as
   usual, `error_message` says why) and a scheduled one pings `/fail`. DISPATCH_FAILED wins over it. On
-  SITG's history (2025-01 to 2026-10) a 10:15 run would have been STALE_SOURCE on 8 days: one real
-  5-day outage (2025-05-16 → 21) and single mornings after a 3-day gap in stamps (e.g. 2026-10-13), which
-  the 3-day window still caught. Over time the column also shows whether 10:15 gets each day's batch
+  SITG's history (2025-01 to 2026-10) a 10:15 run would have been STALE_SOURCE only during the one real
+  outage (5 days without stamps, 2025-05-16 → 21: the runs of 05-20 and 05-21). 4 days rather than 3
+  because stamps have 3-day gaps a few times a year (e.g. 2026-10-10 → 13), which the 3-day cursor
+  still covers; 3 days would have alerted on 8 mornings. Over time the column also shows whether 10:15 gets each day's batch
   (normally `max_date_maj` = the day before the run). `changed` = events detected (NEW +
   GROUPE_CHANGE), not upserted rows (every re-fetched row is "updated"). RUNNING rows found at startup
   (a restart mid-run) are marked FAILED. **Dead-man's switch** (`HealthcheckPinger`): with env
@@ -451,8 +452,8 @@ Setup (once per Firebase project; Android still needs steps 1 and 3):
   API mapped onto devices (same id, token refresh, label vs address, delete), one push per event and
   device naming both perimeters + device feed. `ImportJobRunTest` (SitgImporter and the pinger
   mocked): `job_run` row on success and FAILED on exception, STALE_SOURCE + `/fail` ping on a source
-  older than 3 days or an empty fetch, `/admin/job-runs` newest first with `max_date_maj_sitg`.
-  `SourceFreshnessTest` (unit): the 3-day boundary, newest date of a run.
+  older than 4 days or an empty fetch, `/admin/job-runs` newest first with `max_date_maj_sitg`.
+  `SourceFreshnessTest` (unit): the 4-day boundary (a 3-day stamp gap is not stale), newest date of a run.
 - `MatchingRadiusIntegrationTest`: a subscription at the maximum radius matches an event 1 m inside it (and
   not one 1 m outside); the DB CHECK has the same bounds as `SubscriptionInput`; the API refuses max + 1.
 - `V6MigrationTest`: creates a throwaway database `perimetre_v6_migration_test` on the same server,

@@ -32,7 +32,7 @@ public record JobRun(
     }
 
     public enum Status {
-        // STALE_SOURCE: the run completed, but the newest date_maj_2 it fetched is older than 3 days.
+        // STALE_SOURCE: the run completed, but the newest date_maj_2 it fetched is older than 4 days.
         RUNNING, SUCCESS, FAILED, DISPATCH_FAILED, STALE_SOURCE
     }
 

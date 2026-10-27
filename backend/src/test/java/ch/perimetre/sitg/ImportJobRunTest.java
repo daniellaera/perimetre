@@ -91,18 +91,18 @@ class ImportJobRunTest {
 
     @Test
     void aStaleSourceEndsStaleSourceAndPingsFail() {
-        LocalDate fourDaysAgo = LocalDate.now(ZoneOffset.UTC).minusDays(4);
+        LocalDate fiveDaysAgo = LocalDate.now(ZoneOffset.UTC).minusDays(5);
         when(importer.run(ImportMode.INCREMENTAL))
-                .thenReturn(new SitgImporter.ImportResult(ImportMode.INCREMENTAL, 30, 0, 30, List.of(), fourDaysAgo, 1));
+                .thenReturn(new SitgImporter.ImportResult(ImportMode.INCREMENTAL, 30, 0, 30, List.of(), fiveDaysAgo, 1));
 
         long id = job.run(ImportMode.INCREMENTAL, Trigger.SCHEDULED).jobRunId();
 
         Map<String, Object> row = row(id);
         assertThat(row).containsEntry("status", "STALE_SOURCE")
                 .containsEntry("fetched", 30)
-                .containsEntry("max_date_maj_sitg", Date.valueOf(fourDaysAgo));
+                .containsEntry("max_date_maj_sitg", Date.valueOf(fiveDaysAgo));
         assertThat((String) row.get("error_message")).isEqualTo(
-                "stale source: newest date_maj_2 " + fourDaysAgo + " is older than 3 days");
+                "stale source: newest date_maj_2 " + fiveDaysAgo + " is older than 4 days");
         verify(pinger).fail(contains("STALE_SOURCE"));
         verify(pinger, never()).success(anyString());
     }

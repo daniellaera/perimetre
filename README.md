@@ -164,7 +164,7 @@ The reference deployment runs on one VPS (2 vCPU, 4 GB RAM, Ubuntu 24.04) for th
    That run records a baseline and sends no notifications.
 6. **Operations:** imports run at 10:15 (incremental) and Sundays 10:45 (full), Europe/Zurich
    (`IMPORT_INCREMENTAL_CRON` / `IMPORT_FULL_CRON` to change them). A run that finds no SITG data newer than
-   3 days ends `STALE_SOURCE`.
+   4 days ends `STALE_SOURCE`.
    `GET /admin/job-runs` lists the runs. The optional `HEALTHCHECK_PING_URL` alerts you when a scheduled run
    is missing or fails. `deploy/backup.sh` keeps 14 days of `pg_dump`; copy them off the server.
 7. **App:** build with `--dart-define=API_BASE_URL=https://api.<domain>`, your bundle id, your Firebase

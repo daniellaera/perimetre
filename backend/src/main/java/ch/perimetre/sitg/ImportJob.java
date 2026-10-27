@@ -33,7 +33,9 @@ class ImportJob {
 
     private static final Logger log = LoggerFactory.getLogger(ImportJob.class);
     private static final String ZONE = "Europe/Zurich";
-    static final Duration MAX_SOURCE_AGE = Duration.ofDays(3);
+    // 4, not 3: SITG's stamps have 3-day gaps a few times a year (e.g. 2026-10-10 → 13), which the 3-day
+    // cursor still covers; on 2025-01..2026-10 only the 5-day outage of 2025-05-16 would have alerted.
+    static final Duration MAX_SOURCE_AGE = Duration.ofDays(4);
 
     private final SitgImporter importer;
     private final NotificationDispatcher dispatcher;
@@ -169,7 +171,7 @@ class ImportJob {
 
     /**
      * True when the newest {@code date_maj_2} a run fetched (midnight UTC) is more than {@link #MAX_SOURCE_AGE}
-     * before {@code runStart}, or when it fetched nothing: the incremental window alone spans 3 days.
+     * before {@code runStart}, or when it fetched nothing (nothing in the incremental's 3-day window).
      */
     static boolean isStale(LocalDate maxDateMaj, Instant runStart) {
         return maxDateMaj == null
