@@ -5,7 +5,7 @@ Prepared 2026-10-26. Nothing has been uploaded and App Store Connect has not bee
 
 ## Ready in the repo (verified with a local `flutter build ipa --release`)
 
-- Bundle id `ch.perimetre.app`, version **1.0.0 (1)** (`app/pubspec.yaml` `version: 1.0.0+1`), team `K433J5XKST`,
+- Bundle id `ch.perimetre.app`, version **1.0.0 (2)** (`app/pubspec.yaml` `version: 1.0.0+2`), team `K433J5XKST`,
   iPhone only (`TARGETED_DEVICE_FAMILY = 1`, so no iPad screenshots are needed), iOS 15+.
 - The archive is signed **Apple Distribution: Daniel Laera (K433J5XKST)** with entitlements `aps-environment =
   production`, `get-task-allow = false` and `beta-reports-active` (Release uses `Runner/RunnerRelease.entitlements`;
@@ -139,5 +139,6 @@ Mes périmètres with two perimeters. `xcrun simctl io <id> screenshot file.png`
    review.
 5. **External testing:** fill in Test Information (feedback e-mail, beta description, no sign-in). The
    first build goes through Beta App Review (about a day).
-6. Smoke test on a real iPhone: permission prompt → device registered (`GET /devices/{id}` on prod) →
+6. Smoke test on a real iPhone, from a fresh install: create a perimeter → explanation page → permission
+   prompt → device registered (`GET /devices/{id}` on prod) → "Tester les notifications" → push received;
    `POST /admin/test-push?subscription_id=…` → push received → tap opens the dossier.
