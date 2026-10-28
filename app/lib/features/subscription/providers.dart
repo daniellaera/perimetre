@@ -1,12 +1,12 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../api/models.dart';
 import '../../api/perimetre_api.dart';
 import '../../push/push_service.dart';
+import '../../push/token_sync.dart';
 import '../explore/providers.dart';
 
 part 'providers.g.dart';
@@ -15,11 +15,6 @@ part 'providers.g.dart';
 @Riverpod(keepAlive: true)
 SharedPreferences sharedPreferences(Ref ref) => throw UnimplementedError('sharedPreferencesProvider must be overridden');
 
-/// Thrown by [MySubscriptions.add] and [MySubscriptions.edit] when the user refuses notifications.
-class NotificationsDeniedException implements Exception {
-  const NotificationsDeniedException();
-}
-
 /// Keys in shared_preferences. The device id is the only handle on the device's subscriptions (no account).
 const deviceIdKey = 'device_id';
 
@@ -27,27 +22,47 @@ const deviceIdKey = 'device_id';
 /// device with the same id, so it is adopted as the device id.
 const legacySubscriptionIdKey = 'subscription_id';
 
+/// Started by the home shell: keeps the backend's push token of this device current (see [TokenSync]).
+@Riverpod(keepAlive: true)
+TokenSync tokenSync(Ref ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  final sync = TokenSync(
+    prefs: prefs,
+    api: ref.watch(perimetreApiProvider),
+    push: ref.watch(pushServiceProvider),
+    deviceId: () => prefs.getString(deviceIdKey),
+  );
+  ref.onDispose(sync.dispose);
+  return sync;
+}
+
+/// The OS permission to show notifications; invalidated by the home shell on every resume (it can be changed in
+/// the Settings app at any time).
+@Riverpod(keepAlive: true)
+Future<PushPermission> notificationPermission(Ref ref) => ref.watch(pushServiceProvider).permission();
+
 /// The device's subscriptions (perimeters), oldest first. Empty until the first one is added.
 @Riverpod(keepAlive: true)
 class MySubscriptions extends _$MySubscriptions {
   SharedPreferences get _prefs => ref.read(sharedPreferencesProvider);
   PerimetreApi get _api => ref.read(perimetreApiProvider);
   PushService get _push => ref.read(pushServiceProvider);
+  TokenSync get _tokenSync => ref.read(tokenSyncProvider);
 
   /// Null until the first subscription is added (or after the backend forgot the device).
   String? get deviceId => _prefs.getString(deviceIdKey);
 
   @override
   Future<List<Subscription>> build() async {
-    final tokenRefresh = _push.onTokenRefresh.listen(_onTokenRefresh);
-    ref.onDispose(tokenRefresh.cancel);
-
     await _adoptLegacySubscription();
     final id = deviceId;
     if (id == null) return const [];
     final subscriptions = await _api.subscriptions(id);
     // Deleted server-side (e.g. after repeated invalid tokens): forget it. Network errors keep the id.
-    if (subscriptions == null) await _prefs.remove(deviceIdKey);
+    if (subscriptions == null) {
+      await _prefs.remove(deviceIdKey);
+      await _tokenSync.forget();
+    }
     return subscriptions ?? const [];
   }
 
@@ -58,8 +73,9 @@ class MySubscriptions extends _$MySubscriptions {
     await _prefs.remove(legacySubscriptionIdKey);
   }
 
-  /// Asks for notification permission, registers the device (or refreshes its push token), then creates the
-  /// subscription. Throws [SubscriptionLimitException] at the backend's cap.
+  /// Registers the device (or refreshes its push token), then creates the subscription. Throws
+  /// [SubscriptionLimitException] at the backend's cap, [PushNotReadyException] without a usable push token. The
+  /// notification permission is asked by the screen: the token does not depend on it.
   Future<Subscription> add(SubscriptionInput input) async {
     final device = await _ensureDevice();
     final created = await _api.createSubscription(device, input);
@@ -89,27 +105,20 @@ class MySubscriptions extends _$MySubscriptions {
   /// The device id, after sending the current push token: a new device when there is none yet or the
   /// backend no longer has it (its subscriptions are then gone too).
   Future<String> _ensureDevice() async {
-    if (!await _push.requestPermission()) throw const NotificationsDeniedException();
-    final token = await _push.getToken();
+    final token = await _tokenSync.tokenForRegistration();
     final current = deviceId;
+    final String id;
     if (current != null && await _api.updateDevice(current, pushToken: token, platform: _push.platform) != null) {
-      return current;
+      id = current;
+    } else {
+      id = (await _api.createDevice(pushToken: token, platform: _push.platform)).id;
+      await _prefs.setString(deviceIdKey, id);
+      if (current != null) state = const AsyncData([]);
     }
-    final created = await _api.createDevice(pushToken: token, platform: _push.platform);
-    await _prefs.setString(deviceIdKey, created.id);
-    if (current != null) state = const AsyncData([]);
-    return created.id;
-  }
-
-  Future<void> _onTokenRefresh(String token) async {
-    final id = deviceId;
-    if (id == null) return;
-    try {
-      await _api.updateDevice(id, pushToken: token, platform: _push.platform);
-    } catch (e) {
-      // Retried on the next refresh or the next save; the old token keeps working for a while.
-      debugPrint('Push token refresh not sent to the backend: $e');
-    }
+    await _tokenSync.recordSent(token);
+    // A refresh during the registration had no device to update: catch up.
+    unawaited(_tokenSync.sync());
+    return id;
   }
 }
 

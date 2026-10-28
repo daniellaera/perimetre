@@ -157,6 +157,35 @@ class DeviceApiIntegrationTest {
         }
     }
 
+    /** "Tester les notifications": one generic push, then 429 until a minute has passed; nothing else written. */
+    @Test
+    void testPushIsSentAtMostOncePerMinute(CapturedOutput output) throws Exception {
+        UUID device = createDevice("dev-token-test-push");
+        mvc.perform(post("/devices/{id}/test-push", device))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SENT"))
+                .andExpect(jsonPath("$.fcm_message_id").doesNotExist());
+        assertThat(output).contains("PUSH (log only) token=dev-token-test-push title=\"Périmètre\" "
+                + "body=\"Notification de test : les alertes arrivent bien sur cet appareil.\" data={kind=TEST}");
+
+        mvc.perform(post("/devices/{id}/test-push", device))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(result -> assertThat(result.getResponse().getHeader("Retry-After")).isEqualTo("60"))
+                .andExpect(jsonPath("$.code").value("TEST_PUSH_RATE_LIMITED"))
+                .andExpect(jsonPath("$.detail").value(
+                        "Une notification de test vient d'être envoyée. Réessayez dans une minute."));
+
+        jdbc.sql("UPDATE device SET last_test_push_at = now() - interval '61 seconds' WHERE id = :id")
+                .param("id", device).update();
+        mvc.perform(post("/devices/{id}/test-push", device))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SENT"));
+        assertThat(jdbc.sql("SELECT count(*) FROM notification n JOIN subscription s ON s.id = n.subscription_id"
+                        + " WHERE s.device_id = :id").param("id", device).query(Long.class).single()).isZero();
+
+        mvc.perform(post("/devices/{id}/test-push", UUID.randomUUID())).andExpect(status().isNotFound());
+    }
+
     /** The first app build: POST, GET, PUT (token refresh), events, DELETE, all on /subscriptions. */
     @Test
     void legacySubscriptionApiKeepsWorkingOnTopOfDevices() throws Exception {

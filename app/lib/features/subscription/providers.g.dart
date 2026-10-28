@@ -60,6 +60,100 @@ final class SharedPreferencesProvider
 
 String _$sharedPreferencesHash() => r'70ef90bd70df9f89260fca9b542d9f8d25d8e3cb';
 
+/// Started by the home shell: keeps the backend's push token of this device current (see [TokenSync]).
+
+@ProviderFor(tokenSync)
+final tokenSyncProvider = TokenSyncProvider._();
+
+/// Started by the home shell: keeps the backend's push token of this device current (see [TokenSync]).
+
+final class TokenSyncProvider
+    extends $FunctionalProvider<TokenSync, TokenSync, TokenSync>
+    with $Provider<TokenSync> {
+  /// Started by the home shell: keeps the backend's push token of this device current (see [TokenSync]).
+  TokenSyncProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'tokenSyncProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$tokenSyncHash();
+
+  @$internal
+  @override
+  $ProviderElement<TokenSync> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  TokenSync create(Ref ref) {
+    return tokenSync(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(TokenSync value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<TokenSync>(value),
+    );
+  }
+}
+
+String _$tokenSyncHash() => r'b085cb619c687bc606fb647fc7c3f12e137af9d1';
+
+/// The OS permission to show notifications; invalidated by the home shell on every resume (it can be changed in
+/// the Settings app at any time).
+
+@ProviderFor(notificationPermission)
+final notificationPermissionProvider = NotificationPermissionProvider._();
+
+/// The OS permission to show notifications; invalidated by the home shell on every resume (it can be changed in
+/// the Settings app at any time).
+
+final class NotificationPermissionProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<PushPermission>,
+          PushPermission,
+          FutureOr<PushPermission>
+        >
+    with $FutureModifier<PushPermission>, $FutureProvider<PushPermission> {
+  /// The OS permission to show notifications; invalidated by the home shell on every resume (it can be changed in
+  /// the Settings app at any time).
+  NotificationPermissionProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'notificationPermissionProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$notificationPermissionHash();
+
+  @$internal
+  @override
+  $FutureProviderElement<PushPermission> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
+
+  @override
+  FutureOr<PushPermission> create(Ref ref) {
+    return notificationPermission(ref);
+  }
+}
+
+String _$notificationPermissionHash() =>
+    r'a04b09dfef5cab3f51a675fba61407a92e9889d5';
+
 /// The device's subscriptions (perimeters), oldest first. Empty until the first one is added.
 
 @ProviderFor(MySubscriptions)
@@ -88,7 +182,7 @@ final class MySubscriptionsProvider
   MySubscriptions create() => MySubscriptions();
 }
 
-String _$mySubscriptionsHash() => r'1dbb2a8401e9479a102e310f01a00d95434d5ff2';
+String _$mySubscriptionsHash() => r'a7276f9472a98f6ba65275fd1a1a0e6012119f7d';
 
 /// The device's subscriptions (perimeters), oldest first. Empty until the first one is added.
 

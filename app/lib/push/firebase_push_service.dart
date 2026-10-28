@@ -25,24 +25,26 @@ class FirebasePushService implements PushService {
   String get platform => defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android';
 
   @override
-  Future<bool> requestPermission() async {
-    final settings = await _messaging.requestPermission();
-    return settings.authorizationStatus == AuthorizationStatus.authorized ||
-        settings.authorizationStatus == AuthorizationStatus.provisional;
-  }
+  Future<PushPermission> permission() async => _map((await _messaging.getNotificationSettings()).authorizationStatus);
 
   @override
-  Future<String> getToken() async {
-    // On iOS, getToken() fails until APNs has delivered the device token, which can take a moment.
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      for (var i = 0; i < 20 && await _messaging.getAPNSToken() == null; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 500));
-      }
-    }
+  Future<PushPermission> requestPermission() async =>
+      _map((await _messaging.requestPermission()).authorizationStatus);
+
+  static PushPermission _map(AuthorizationStatus status) => switch (status) {
+    AuthorizationStatus.authorized || AuthorizationStatus.provisional => PushPermission.granted,
+    AuthorizationStatus.denied || AuthorizationStatus.deniedPermanently => PushPermission.denied,
+    AuthorizationStatus.notDetermined => PushPermission.notDetermined,
+  };
+
+  @override
+  Future<String?> currentToken() async {
+    // Firebase iOS SDK 13 hands out a token before APNs has delivered the device token (it only logs "APNS
+    // device token not set before retrieving FCM Token"); that token is never delivered. Once the APNs token is
+    // set, the SDK drops it and fetches a mapped one (announced through onTokenRefresh), so getToken() is safe.
+    if (defaultTargetPlatform == TargetPlatform.iOS && await _messaging.getAPNSToken() == null) return null;
     // ignore: deprecated_member_use
-    final token = await _messaging.getToken();
-    if (token == null) throw StateError('Firebase returned no push token');
-    return token;
+    return _messaging.getToken();
   }
 
   @override

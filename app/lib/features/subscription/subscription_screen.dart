@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../api/models.dart';
 import '../../api/perimetre_api.dart';
 import '../../push/push_service.dart';
+import '../../push/token_sync.dart';
 import '../explore/providers.dart';
 import '../explore/widgets.dart';
+import 'notifications.dart';
 import 'providers.dart';
 
 /// "Mes périmètres" tab: the device's subscriptions (a form when there is none yet) and the recent events in
@@ -50,6 +52,14 @@ class SubscriptionScreen extends ConsumerWidget {
             onPressed: () => openSubscriptionForm(context),
             icon: const Icon(Icons.add_location_alt_outlined),
             label: const Text('Ajouter un périmètre'),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+          child: TextButton.icon(
+            onPressed: () => testNotifications(context, ref),
+            icon: const Icon(Icons.notifications_outlined),
+            label: const Text('Tester les notifications'),
           ),
         ),
         _RecentEvents(subscriptions),
@@ -190,6 +200,12 @@ class _SubscriptionFormState extends ConsumerState<_SubscriptionForm> {
 
   Future<void> _save() async {
     final messenger = ScaffoldMessenger.of(context);
+    // Still valid once this form is gone (the first one is replaced by the list as soon as it is saved).
+    final navigator = Navigator.of(context);
+    final container = ProviderScope.containerOf(context);
+    final isNew = widget.initial == null;
+    final first = widget.first;
+    final onDone = widget.onDone;
     final name = _name.text.trim();
     final input = SubscriptionInput(
       lat: _address!.lat,
@@ -202,26 +218,43 @@ class _SubscriptionFormState extends ConsumerState<_SubscriptionForm> {
     setState(() => _saving = true);
     try {
       final subscriptions = ref.read(mySubscriptionsProvider.notifier);
-      if (widget.initial == null) {
+      if (isNew) {
         await subscriptions.add(input);
       } else {
         await subscriptions.edit(widget.initial!.id, input);
       }
+      // Right after a new perimeter: the explanation, then the OS prompt (only while not determined yet).
+      final permission = isNew
+          ? await askNotificationPermission(navigator, container)
+          : await container.read(notificationPermissionProvider.future);
+      final saved = first
+          ? 'Périmètre enregistré.'
+          : isNew
+          ? 'Périmètre ajouté.'
+          : 'Périmètre mis à jour.';
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            widget.first
-                ? 'Notifications activées.'
-                : widget.initial == null
-                ? 'Périmètre ajouté.'
-                : 'Périmètre mis à jour.',
+            permission == PushPermission.granted
+                ? (first ? 'Notifications activées.' : saved)
+                : '$saved Les notifications sont désactivées : aucune alerte n\'arrivera.',
           ),
+          action: permission == PushPermission.denied
+              ? const SnackBarAction(label: 'Réglages', onPressed: openNotificationSettings)
+              : null,
+          // With an action, a SnackBar otherwise stays until dismissed and queues every later one.
+          persist: false,
         ),
       );
-      widget.onDone();
-    } on NotificationsDeniedException {
+      onDone();
+    } on PushNotReadyException {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Notifications refusées. Autorisez-les dans les Réglages de l\'iPhone.')),
+        const SnackBar(
+          content: Text(
+            'Les notifications ne sont pas encore prêtes sur cet appareil. Vérifiez la connexion Internet et '
+            'réessayez.',
+          ),
+        ),
       );
     } on SubscriptionLimitException catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
@@ -349,7 +382,9 @@ class _SubscriptionCard extends ConsumerWidget {
     final all = s.categories.length == Groupe.notifiable.length;
     return Card(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: ListTile(
+      child: Column(
+        children: [
+          ListTile(
         contentPadding: const EdgeInsets.only(left: 16, right: 4),
         leading: Icon(_icon(s.label)),
         title: Text(s.name, style: theme.textTheme.titleMedium),
@@ -374,6 +409,9 @@ class _SubscriptionCard extends ConsumerWidget {
             PopupMenuItem(value: 'delete', child: Text('Supprimer')),
           ],
         ),
+          ),
+          const NotificationsOffNotice(),
+        ],
       ),
     );
   }

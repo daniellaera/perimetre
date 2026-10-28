@@ -100,6 +100,15 @@ class PushMessagesTest {
     }
 
     @Test
+    void testPushNamesNoDossier() {
+        PushMessage m = PushMessages.test();
+
+        assertThat(m.title()).isEqualTo("Périmètre");
+        assertThat(m.body()).isEqualTo("Notification de test : les alertes arrivent bien sur cet appareil.");
+        assertThat(m.data()).isEqualTo(Map.of("kind", "TEST"));
+    }
+
+    @Test
     void singleUnlabelledSubscriptionIsNotNamed() {
         PushMessage m = PushMessages.forEvent(match(7, SUBSCRIPTION, null, "Rue du Rhône 1 1204 Genève", 1, 80));
 

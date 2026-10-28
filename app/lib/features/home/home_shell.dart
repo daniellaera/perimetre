@@ -9,7 +9,8 @@ import '../explore/providers.dart';
 import '../explore/widgets.dart';
 import '../subscription/providers.dart';
 
-/// Bottom navigation (Explorer / Mes périmètres) and handling of tapped pushes.
+/// Bottom navigation (Explorer / Mes périmètres), handling of tapped pushes, and the push token sync and
+/// permission refresh at start and on every resume.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key, required this.shell});
 
@@ -23,10 +24,19 @@ class HomeShell extends ConsumerStatefulWidget {
 
 class _HomeShellState extends ConsumerState<HomeShell> {
   StreamSubscription<Map<String, dynamic>>? _opened;
+  late final AppLifecycleListener _lifecycle;
 
   @override
   void initState() {
     super.initState();
+    ref.read(tokenSyncProvider).start();
+    _lifecycle = AppLifecycleListener(
+      onResume: () {
+        // Notifications may have been switched on or off in the Settings app meanwhile.
+        ref.invalidate(notificationPermissionProvider);
+        ref.read(tokenSyncProvider).sync();
+      },
+    );
     final push = ref.read(pushServiceProvider);
     _opened = push.onOpened.listen(_onPushOpened);
     push.initialOpened().then((data) {
@@ -36,6 +46,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     _opened?.cancel();
     super.dispose();
   }
@@ -46,7 +57,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     widget.shell.goBranch(HomeShell._perimetreBranch);
     ref.invalidate(recentEventsProvider);
     final idDossier = data['id_dossier'];
-    if (idDossier is! String) return; // summary push: the feed is enough
+    if (idDossier is! String) return; // summary or test push: the feed is enough
 
     final messenger = ScaffoldMessenger.of(context);
     try {

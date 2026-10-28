@@ -17,6 +17,7 @@ final class PushMessages {
 
     static final String DEFAULT_OPERATION_LABEL = "Demande";
     static final String SUMMARY_KIND = "SUMMARY";
+    static final String TEST_KIND = "TEST";
 
     private static final int TITLE_DESCRIPTION_CHARS = 40;
     private static final int BODY_DESCRIPTION_CHARS = 90;
@@ -106,6 +107,12 @@ final class PushMessages {
             return truncate(POSTCODE_AND_LOCALITY.matcher(n.address().strip()).replaceFirst(""), PLACE_NAME_CHARS);
         }
         return null;
+    }
+
+    /** POST /devices/{id}/test-push: names no dossier; the app opens Mes périmètres on a tap. */
+    static PushMessage test() {
+        return new PushMessage("Périmètre", "Notification de test : les alertes arrivent bien sur cet appareil.",
+                Map.of("kind", TEST_KIND));
     }
 
     static PushMessage summary(int count) {

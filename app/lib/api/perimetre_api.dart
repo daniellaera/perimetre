@@ -21,6 +21,20 @@ class SubscriptionLimitException implements Exception {
   String toString() => message;
 }
 
+/// A test push was sent less than a minute ago (429 TEST_PUSH_RATE_LIMITED).
+class TestPushRateLimitedException implements Exception {
+  const TestPushRateLimitedException(this.message);
+
+  /// French, ready to show.
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// The backend's answer to a test push: FCM accepted it, refused the token, or failed otherwise.
+enum TestPushStatus { sent, invalidToken, failed }
+
 class PerimetreApi {
   PerimetreApi(this._dio);
 
@@ -104,6 +118,26 @@ class PerimetreApi {
     return (response.data ?? const [])
         .map((json) => DossierEvent.fromJson(json as Map<String, dynamic>))
         .toList();
+  }
+
+  /// One generic push to the device. Null when the device no longer exists; throws
+  /// [TestPushRateLimitedException] within a minute of the previous one.
+  Future<TestPushStatus?> testPush(String deviceId) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>('/devices/$deviceId/test-push');
+      return switch (response.data?['status']) {
+        'SENT' => TestPushStatus.sent,
+        'INVALID_TOKEN' => TestPushStatus.invalidToken,
+        _ => TestPushStatus.failed,
+      };
+    } on DioException catch (e) {
+      final body = e.response?.data;
+      if (e.response?.statusCode == 404) return null;
+      if (e.response?.statusCode == 429 && body is Map && body['code'] == 'TEST_PUSH_RATE_LIMITED') {
+        throw TestPushRateLimitedException(body['detail'] as String? ?? 'Réessayez dans une minute.');
+      }
+      rethrow;
+    }
   }
 
   Future<T?> _orNullOn404<T>(

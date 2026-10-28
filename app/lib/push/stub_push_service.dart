@@ -24,10 +24,13 @@ class StubPushService implements PushService {
   String get platform => defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android';
 
   @override
-  Future<bool> requestPermission() async => true;
+  Future<PushPermission> permission() async => PushPermission.granted;
 
   @override
-  Future<String> getToken() async {
+  Future<PushPermission> requestPermission() async => PushPermission.granted;
+
+  @override
+  Future<String?> currentToken() async {
     final existing = _prefs.getString(_tokenKey);
     if (existing != null) return existing;
     final token = 'dev-token-${_uuidV4()}';

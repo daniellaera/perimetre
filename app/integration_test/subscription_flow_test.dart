@@ -13,10 +13,15 @@ import 'package:perimetre/app.dart';
 import 'package:perimetre/features/explore/widgets.dart';
 import 'package:perimetre/features/subscription/providers.dart';
 import 'package:perimetre/push/push_service.dart';
+import 'package:perimetre/push/token_sync.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FakePushService implements PushService {
   final taps = StreamController<Map<String, dynamic>>.broadcast();
+
+  /// The OS permission, and what the OS prompt turns a not-determined one into.
+  PushPermission current = PushPermission.granted;
+  PushPermission onPrompt = PushPermission.granted;
 
   @override
   bool get isConfigured => false;
@@ -25,10 +30,14 @@ class FakePushService implements PushService {
   String get platform => 'ios';
 
   @override
-  Future<bool> requestPermission() async => true;
+  Future<PushPermission> permission() async => current;
 
   @override
-  Future<String> getToken() async => 'dev-token-integration-test';
+  Future<PushPermission> requestPermission() async =>
+      current = current == PushPermission.notDetermined ? onPrompt : current;
+
+  @override
+  Future<String?> currentToken() async => 'dev-token-integration-test';
 
   @override
   Stream<String> get onTokenRefresh => const Stream.empty();
@@ -47,7 +56,8 @@ Future<void> pumpUntil(WidgetTester tester, Finder finder, {Duration timeout = c
     await tester.pump(const Duration(milliseconds: 100));
     if (finder.evaluate().isNotEmpty) return;
   }
-  throw TestFailure('Timed out waiting for $finder');
+  final texts = find.byType(Text).evaluate().map((e) => (e.widget as Text).data).nonNulls.join(' | ');
+  throw TestFailure('Timed out waiting for $finder. On screen: $texts');
 }
 
 Future<void> pumpUntilGone(WidgetTester tester, Finder finder, {Duration timeout = const Duration(seconds: 15)}) async {
@@ -160,6 +170,47 @@ void main() {
     await deleteFromCard(tester, 'Domicile');
     await pumpUntil(tester, find.text('Activer les notifications'));
     expect(await api.subscriptions(deviceId), isEmpty);
+  });
+
+  testWidgets('explains before the OS prompt, flags a refusal on each perimeter, sends a test push', (tester) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    final push = FakePushService()
+      ..current = PushPermission.notDetermined
+      ..onPrompt = PushPermission.denied;
+    await pumpApp(tester, prefs, push);
+    await pumpUntil(tester, find.text('Activer les notifications'));
+
+    // The perimeter is saved first, then the explanation page, then the (fake) OS prompt, refused.
+    await pickAddress(tester, 'Rue de Carouge 50', '1205 Genève');
+    await tester.tap(find.text('Activer les notifications'));
+    await pumpUntil(tester, find.text('Recevoir les alertes'));
+    expect(prefs.getString(deviceIdKey), isNotNull);
+    await tester.pump(const Duration(milliseconds: 500)); // page transition
+    await tester.tap(find.text('Continuer'));
+    await pumpUntilGone(tester, find.text('Recevoir les alertes'));
+    await pumpUntil(tester, find.text('Notifications désactivées : aucune alerte n\'arrivera.'));
+    expect(find.text('Ouvrir les Réglages'), findsOneWidget);
+    expect(prefs.getString(TokenSync.sentTokenKey), 'dev-token-integration-test');
+
+    // A test push would not show: the app says so instead of sending it.
+    await tester.tap(find.text('Tester les notifications'));
+    await pumpUntil(tester, find.textContaining('la notification de test ne s\'afficherait pas'));
+    await tester.pump(const Duration(seconds: 5)); // let the SnackBar go
+
+    // Allowed in the Settings app, back to the app: the notice goes, the test push is sent, then rate-limited.
+    push.current = PushPermission.granted;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await pumpUntilGone(tester, find.text('Ouvrir les Réglages'));
+    await tester.tap(find.text('Tester les notifications'));
+    await pumpUntil(tester, find.textContaining('Notification de test envoyée'));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.tap(find.text('Tester les notifications'));
+    await pumpUntil(tester, find.text('Une notification de test vient d\'être envoyée. Réessayez dans une minute.'));
+
+    await deleteFromCard(tester, 'Rue de Carouge 50');
+    await pumpUntil(tester, find.text('Activer les notifications'));
   });
 
   testWidgets('adopts the subscription of the single-subscription app build', (tester) async {

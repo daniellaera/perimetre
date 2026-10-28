@@ -26,10 +26,13 @@ class ScreenshotPushService implements PushService {
   String get platform => 'ios';
 
   @override
-  Future<bool> requestPermission() async => true;
+  Future<PushPermission> permission() async => PushPermission.granted;
 
   @override
-  Future<String> getToken() async => 'dev-token-screenshots';
+  Future<PushPermission> requestPermission() async => PushPermission.granted;
+
+  @override
+  Future<String?> currentToken() async => 'dev-token-screenshots';
 
   @override
   Stream<String> get onTokenRefresh => const Stream.empty();

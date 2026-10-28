@@ -136,13 +136,14 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   10-26 batch was absent at 03:15 on 10-27 and present at 10:25; the 10-25 batch was there at 09:16 on
   10-26), hence the 10:15 incremental.
 
-## Data model (Flyway V1–V7)
+## Data model (Flyway V1–V8)
 
 - `dossier`: one row per SITG dossier (see "SITG import"); `dossier_geog_gist` on `(geom::geography)`.
 - `sync_state(source PK, last_run, bootstrapped)`: one row, `SIT_AUTOR_DOSSIER`.
 - `device(id UUID PK, push_token, platform ios|android|null, consecutive_failures, created_at,
-  updated_at)` (V6): one app installation. `consecutive_failures` counts runs whose push failed with an
-  invalid token (see "Notifications").
+  updated_at, last_test_push_at)` (V6; V8 added `last_test_push_at`): one app installation.
+  `consecutive_failures` counts runs whose push failed with an invalid token (see "Notifications");
+  `last_test_push_at` rate-limits `POST /devices/{id}/test-push`.
 - `subscription(id UUID PK, device_id → device ON DELETE CASCADE, geom Point 4326, radius_m 100–1000,
   categories TEXT[] default all five notifiable groupes, label, address, created_at, updated_at)`;
   `subscription_geog_gist` on `(geom::geography)`, `subscription_device_id_idx`. `label` is the user's
@@ -193,8 +194,9 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
     été déposé" · REFUSE "Le projet ne se fera pas".
   - data `{id_dossier, kind, new_groupe, subscription_id}` (nearest match). Summary: title "Périmètre",
     body "N nouveaux changements autour de chez vous" (N = events), or with named places
-    "N nouveaux changements (Domicile : 3, Travail : 2)", data `{kind: SUMMARY, count}`. iOS gets
-    `aps.sound = default`.
+    "N nouveaux changements (Domicile : 3, Travail : 2)", data `{kind: SUMMARY, count}`. Test push
+    (`PushMessages.test`, `POST /devices/{id}/test-push`): title "Périmètre", body "Notification de test : les
+    alertes arrivent bien sur cet appareil.", data `{kind: TEST}`. iOS gets `aps.sound = default`.
 - **Senders** (`PushSender`, chosen by `PushConfig` at startup): `FcmPushSender` (firebase-admin) when
   the env var `FIREBASE_CREDENTIALS` points to an existing service-account JSON file, otherwise
   `LogPushSender`, which logs `PUSH (log only) token=… title="…" body="…" data={…}` at INFO and
@@ -262,6 +264,13 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
     `subscription_ids` the matching ones nearest first. `GET /devices/{id}/subscriptions/{sid}/events`:
     one subscription's (whatever their date). Each item = the `/dossiers` fields (flattened; `groupe` is
     the dossier's current groupe) + `event_id, kind, old_groupe, new_groupe, occurred_at, subscription_ids`.
+  - `POST /devices/{id}/test-push` (`DeviceTestPushController`; the app's "Tester les notifications", also
+    the support tool): one generic push to the device's token through the active `PushSender` → 200
+    `{status: SENT|INVALID_TOKEN|FAILED, fcm_message_id}`; 404 unknown device; at most one per minute per
+    device, else **429** `application/problem+json` `{code: "TEST_PUSH_RATE_LIMITED", detail: "Une
+    notification de test vient d'être envoyée. Réessayez dans une minute."}` + `Retry-After: 60`. The slot
+    is claimed by one conditional `UPDATE … SET last_test_push_at = now() … RETURNING push_token`, so
+    concurrent requests cannot both send. Writes nothing else (an invalid token is reported, not counted).
 - **Legacy `/subscriptions`** (the single-subscription app build of 2026-10; keep until every installed
   app uses `/devices`, i.e. until the new version has shipped and old installs have updated). Unchanged
   contract: `POST /subscriptions {push_token, platform?, lat, lng, radius_m, categories?, label?}` → 201,
@@ -323,15 +332,18 @@ lib/api/models.dart                AddressSuggestion, Dossier, Groupe, Subscript
 lib/api/geo_admin.dart             geo.admin.ch SearchServer address search
 lib/api/perimetre_api.dart         /dossiers, /devices; API_BASE_URL dart-define (release default: prod)
 lib/map/map_tiles.dart             Mapbox token (dart-define), base TileLayer (light/dark), MapAttribution
-lib/push/push_service.dart         PushService interface + provider (overridden in main)
+lib/push/push_service.dart         PushService interface (permission, currentToken, refresh, taps) + provider
+lib/push/token_sync.dart           TokenSync: keeps the backend's push token current (see "Push token")
 lib/push/init_push.dart            Firebase if configured, else StubPushService
 lib/push/firebase_push_service.dart   FCM: permission, token, refresh, tapped pushes
 lib/push/stub_push_service.dart    fake "dev-token-<uuid>" (kept in prefs), no pushes
-lib/features/home/home_shell.dart  NavigationBar + tapped-push handling
+lib/features/home/home_shell.dart  NavigationBar, tapped-push handling, token sync + permission refresh on resume
 lib/features/explore/...           Explorer tab: providers, screen, shared widgets (address field, radius
                                    slider, map, list sheet, DossierRow, details sheet)
-lib/features/subscription/providers.dart   MySubscriptions (device id in prefs, token refresh → PUT), recentEvents
+lib/features/subscription/providers.dart   MySubscriptions (device id in prefs), tokenSync, notificationPermission, recentEvents
+lib/features/subscription/notifications.dart   permission primer page, "notifications off" notice, test push
 lib/features/subscription/subscription_screen.dart   Mes périmètres tab (list, add/edit page, delete, feed)
+test/token_sync_test.dart          unit tests of TokenSync (run by CI's `flutter test`)
 integration_test/subscription_flow_test.dart   simulator E2E against the local backend
 integration_test/screenshots_test.dart + test_driver/screenshots.dart   README screenshots (docs/screenshots)
 integration_test/map_tiles_test.dart + test_driver/map_screenshots.dart   base map check (build/map-screenshots)
@@ -380,24 +392,42 @@ assets/mapbox-logo.png (+ 2.0x/, 3.0x/)   the Mapbox logo, required on the map
   ⋮ → "Modifier" / "Supprimer" with a confirm), "Ajouter un périmètre" (full-screen form page,
   "Nouveau périmètre" / "Modifier le périmètre"), and the "Récent" feed from `/devices/{id}/events`
   (`DossierRow` with event text + date as the leading line, plus the matched perimeter names when there
-  are several; marker in the event's colour), pull to refresh. Saving asks for notification
-  permission, gets the token, PUTs it to the device (or POSTs `/devices` when there is none or the
-  backend forgot it) and stores the device id in shared_preferences (`device_id`). A 409 shows the
-  backend's French message. A 404 on load forgets the stored device id (the backend deletes devices
-  after repeated invalid tokens). Deleting the last perimeter keeps the device. A yellow banner shows in
-  stub mode.
+  are several; marker in the event's colour), pull to refresh, and "Tester les notifications" (below
+  "Ajouter un périmètre": syncs the token, then `POST /devices/{id}/test-push`; with notifications off it
+  says so instead of sending). Saving waits (≤ 30 s) for a usable token
+  (`TokenSync.tokenForRegistration`, else "Les notifications ne sont pas encore prêtes…"), PUTs it to the
+  device (or POSTs `/devices` when there is none or the backend forgot it) and stores the device id in
+  shared_preferences (`device_id`). A 409 shows the backend's French message. A 404 on load forgets the
+  stored device id (the backend deletes devices after repeated invalid tokens). Deleting the last
+  perimeter keeps the device. A yellow banner shows in stub mode.
+- **Notification permission:** asked right after a new perimeter is saved (the token does not need it),
+  only while it is not determined: an explanation page ("Recevoir les alertes", "Continuer"), then the iOS
+  prompt; closing the page skips the prompt. While it is denied, every perimeter card says "Notifications
+  désactivées : aucune alerte n'arrivera." with "Ouvrir les Réglages" (`app-settings:`); not determined:
+  "Autoriser" (page + prompt). Re-read on every resume. SnackBars with an action set `persist: false`
+  (otherwise they stay until dismissed and queue every later one).
 - **Upgrade from the single-subscription build:** a stored `subscription_id` (legacy key) becomes the
   `device_id` (the backend gave that subscription a device with the same id), then the key is removed.
 - **Tapped push:** switches to Mes périmètres and refreshes the feed; with `data.id_dossier`, looks the
   dossier up via `/dossiers` around `data.subscription_id`'s point (else the first subscription) and
   opens its details sheet, falling back to the device feed (`/dossiers` is capped at 200 and hides
-  TERMINE), else a SnackBar "Ce dossier n'est plus disponible.". Summary pushes only open the tab.
-- **Token refresh:** `onTokenRefresh` → `PUT /devices/{id}` with the new token.
+  TERMINE), else a SnackBar "Ce dossier n'est plus disponible.". Summary and test pushes only open the tab.
+- **Push token** (`TokenSync`, started by the home shell): at start, on every resume and on every
+  `onTokenRefresh`, `PUT /devices/{id}` with the current token when it differs from the last one the
+  backend acknowledged (`push_token_sent` in shared_preferences); retries after 2, 5, 15, then every 60 s
+  while there is no token or the backend is unreachable. A token only comes from
+  `PushService.currentToken`, which on iOS returns null until `getAPNSToken()` is set: Firebase iOS SDK 13
+  hands out an FCM token before APNs has delivered the device token (it only logs "APNS device token not set
+  before retrieving FCM Token"), FCM accepts pushes to that token and never delivers them, and once APNs
+  arrives the SDK replaces it, announced only through `onTokenRefresh`. The 1.0.0 (1) build sent such a
+  token on a first install (a bounded 10 s APNs wait, then `getToken()` anyway; refreshes heard only
+  while the Mes périmètres provider was alive and with a device id; no re-check at start), so a device
+  could keep a dead token for good. Refresh events are only a hint: their token is never sent as is.
 - **iOS push setup in the repo:** `Runner/Runner.entitlements` (`aps-environment = development`, Debug
   and Profile) and `Runner/RunnerRelease.entitlements` (`production`, Release), via `CODE_SIGN_ENTITLEMENTS`;
   `UIBackgroundModes` `remote-notification` in `Info.plist`.
 - **Release / TestFlight** (checklist and store texts: `docs/app-store.md`): version from `pubspec.yaml`
-  (`1.0.0+1`; bump the build number for every upload), iPhone only, `CFBundleDevelopmentRegion fr`,
+  (`1.0.0+2`; bump the build number for every upload), iPhone only, `CFBundleDevelopmentRegion fr`,
   `ITSAppUsesNonExemptEncryption NO`, `Runner/PrivacyInfo.xcprivacy` (precise location, other user content,
   device ID: app functionality, linked, no tracking; UserDefaults CA92.1). It must stay in line with the App
   Store privacy answers and `deploy/site/privacy.html`. No usage strings (no device location; iOS has
@@ -450,7 +480,8 @@ Setup (once per Firebase project; Android still needs steps 1 and 3):
   category filtering; validation; all through the legacy `/subscriptions` API. `DeviceApiIntegrationTest`
   (cap lowered to 3): device + subscription CRUD, 409 with code and French message, validation, legacy
   API mapped onto devices (same id, token refresh, label vs address, delete), one push per event and
-  device naming both perimeters + device feed. `ImportJobRunTest` (SitgImporter and the pinger
+  device naming both perimeters + device feed, test push (sent, 429 + `Retry-After` within a minute,
+  sent again after it, 404). `ImportJobRunTest` (SitgImporter and the pinger
   mocked): `job_run` row on success and FAILED on exception, STALE_SOURCE + `/fail` ping on a source
   older than 4 days or an empty fetch, `/admin/job-runs` newest first with `max_date_maj_sitg`.
   `SourceFreshnessTest` (unit): the 4-day boundary (a 3-day stamp gap is not stale), newest date of a run.
@@ -474,9 +505,11 @@ Setup (once per Firebase project; Android still needs steps 1 and 3):
   --driver=test_driver/screenshots.dart --target=integration_test/screenshots_test.dart
   --dart-define-from-file=config/dev.json -d <simulator id>`,
   then `sips --resampleWidth 600 ../docs/screenshots/*.png`.
-- App: `flutter analyze`; `integration_test/subscription_flow_test.dart` drives the real app on a
+- App: `flutter analyze`; `flutter test` (`test/token_sync_test.dart`: one PUT per token change, nothing
+  before APNs, retries, 404, registration wait); `integration_test/subscription_flow_test.dart` drives the real app on a
   simulator against the local backend (two perimeters, simulated push tap → details sheet, unknown
-  dossier message, delete both; adoption of a legacy subscription id):
+  dossier message, delete both; permission page → refused → notice on the card, test push refused while
+  off, then sent and rate-limited after a resume with permission; adoption of a legacy subscription id):
   `cd app && flutter test integration_test/subscription_flow_test.dart -d <simulator id>`.
   Android is not built locally (no Android SDK on this Mac); firebase_messaging 17 needs minSdk 24,
   which is Flutter 3.47's default (`flutter.minSdkVersion` in `android/app`).
