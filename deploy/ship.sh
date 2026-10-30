@@ -6,8 +6,8 @@
 #   deploy/ship.sh --no-pull  # the image already on the box (registry down, or
 #                             # loaded by hand: docker save | ssh perimetre-prod docker load)
 #
-# 1. syncs the tracked deploy files (compose, Caddyfile, site/, backup.sh) to
-#    /opt/perimetre -- never .env.prod or secrets/, which exist only there;
+# 1. syncs the tracked deploy files (compose, Caddyfile, site/, the backup scripts) to
+#    /opt/perimetre -- never .env.prod, .restic.env or secrets/, which exist only there;
 # 2. checks that .env.prod defines every variable (names only) and that compose
 #    resolves the file, before anything is torn down;
 # 3. saves the running backend's log (a recreate deletes it);
@@ -39,10 +39,12 @@ say "sync deploy files"
 # tar, not rsync from the Mac (macOS's openrsync has no --chmod). Caddy mounts
 # the caddy/ and site/ directories, not single files: a file replaced by rename
 # would stay invisible behind a single-file bind mount.
-COPYFILE_DISABLE=1 tar -cf - --no-xattrs --exclude .DS_Store docker-compose.prod.yml Caddyfile backup.sh site \
+COPYFILE_DISABLE=1 tar -cf - --no-xattrs --exclude .DS_Store docker-compose.prod.yml Caddyfile backup.sh backup-offsite.sh restic-restore-test.sh \
+	set-restic-creds.sh site \
 	| ssh "$TARGET" "set -e; cd $DIR; rm -rf .sync; mkdir -m 700 .sync; tar -xf - -C .sync --no-same-owner; \
 		install -m 644 .sync/docker-compose.prod.yml docker-compose.prod.yml; \
-		install -m 755 .sync/backup.sh backup.sh; \
+		install -m 755 .sync/backup.sh .sync/backup-offsite.sh .sync/restic-restore-test.sh .; \
+		install -d -m 755 deploy; install -m 755 .sync/set-restic-creds.sh deploy/; \
 		install -d -m 755 caddy site; \
 		install -m 644 .sync/Caddyfile caddy/Caddyfile; \
 		chmod -R u=rwX,go=rX .sync/site; rsync -rlt --delete .sync/site/ site/; \

@@ -1,12 +1,11 @@
 #!/bin/bash
-# Nightly database backup on perimetre-prod: /opt/perimetre/backup.sh, run at
-# 02:30 Europe/Zurich by /etc/cron.d/perimetre-backup (installed by
-# bootstrap.sh) as ubuntu. Output goes to the journal:
-#   journalctl -t perimetre-backup
+# Local database backup on perimetre-prod: /opt/perimetre/backup.sh, run every
+# night by backup-offsite.sh (02:30 Europe/Zurich, /etc/cron.d/perimetre-backup),
+# which then copies the dump to Swiss Backup with restic. Output goes to the
+# journal: journalctl -t perimetre-backup
 #
 # pg_dump in custom format to /opt/perimetre/backups, checked with pg_restore
-# --list, 14 days kept. Local only: the off-site copy (Swiss Backup) is a
-# manual step, see CLAUDE.md "Production".
+# --list, 14 days kept.
 set -euo pipefail
 umask 077
 

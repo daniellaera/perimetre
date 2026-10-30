@@ -24,7 +24,7 @@ log "apt update/upgrade"
 apt-get update -q
 apt-get "${APT_OPTS[@]}" upgrade
 # python3-systemd: fail2ban's systemd backend reads sshd from the journal.
-apt-get "${APT_OPTS[@]}" install ca-certificates curl gnupg unattended-upgrades fail2ban python3-systemd
+apt-get "${APT_OPTS[@]}" install ca-certificates curl gnupg unattended-upgrades fail2ban python3-systemd restic
 
 log "unattended-upgrades"
 cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
@@ -98,12 +98,14 @@ install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" -m 755 "$DIR"
 install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" -m 700 "$DIR/secrets" "$DIR/backups"
 
 log "backup cron (02:30 Europe/Zurich)"
-# backup.sh itself is synced by ship.sh; until then the entry fails harmlessly
-# (logged under the perimetre-backup tag: journalctl -t perimetre-backup).
+# backup-offsite.sh (local pg_dump via backup.sh, then restic to Swiss Backup) is
+# synced by ship.sh; until then, and until set-restic-creds.sh has written
+# .restic.env, the entry fails harmlessly (logged under the perimetre-backup
+# tag: journalctl -t perimetre-backup).
 cat > /etc/cron.d/perimetre-backup <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-30 2 * * * $DEPLOY_USER $DIR/backup.sh 2>&1 | logger -t perimetre-backup
+30 2 * * * $DEPLOY_USER $DIR/backup-offsite.sh 2>&1 | logger -t perimetre-backup
 EOF
 chmod 644 /etc/cron.d/perimetre-backup
 
