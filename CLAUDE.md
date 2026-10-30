@@ -428,11 +428,14 @@ assets/mapbox-logo.png (+ 2.0x/, 3.0x/)   the Mapbox logo, required on the map
   and Profile) and `Runner/RunnerRelease.entitlements` (`production`, Release), via `CODE_SIGN_ENTITLEMENTS`;
   `UIBackgroundModes` `remote-notification` in `Info.plist`.
 - **Release / TestFlight** (checklist and store texts: `docs/app-store.md`): version from `pubspec.yaml`
-  (`1.0.0+2`; bump the build number for every upload), iPhone only, `CFBundleDevelopmentRegion fr`,
+  (`1.0.0+3`; bump the build number for every upload), iPhone only, `CFBundleDevelopmentRegion fr`,
   `ITSAppUsesNonExemptEncryption NO`, `Runner/PrivacyInfo.xcprivacy` (precise location, other user content,
   device ID: app functionality, linked, no tracking; UserDefaults CA92.1). It must stay in line with the App
   Store privacy answers and `deploy/site/privacy.html`. No usage strings (no device location; iOS has
-  none for notifications). Icon and launch image are a placeholder from `app/tool/make_icon.swift`.
+  none for notifications). Icon (dashed orange ring and pin on #161412): source `app/tool/app_icon.svg`; `app/tool/make_icons.sh`
+  renders every iOS size (no alpha), the launch image (160 pt, on the storyboard's #161412), the Android
+  launcher icons and the site's `apple-touch-icon.png` / `favicon.ico` (`deploy/site/favicon.svg` is the same
+  mark with rounded corners, also inline in `index.html`). Needs `rsvg-convert` (librsvg).
   `flutter build ipa --release` archives and exports, signed Apple Distribution (verified 2026-10-26;
   Xcode created the managed store profile). Nothing uploaded yet.
 

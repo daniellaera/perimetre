@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- The app icon (app/tool/app_icon.svg) with rounded corners: browsers do not mask a favicon. -->
+  <rect width="1024" height="1024" rx="229" fill="#161412"/>
+  <circle cx="512" cy="512" r="300" fill="none" stroke="#EB7A3C" stroke-width="64" stroke-linecap="round"
+          stroke-dasharray="120 115.62" stroke-dashoffset="60" transform="rotate(-90 512 512)"/>
+  <path d="M512 700 C470 640 382 560 382 470 A130 130 0 1 1 642 470 C642 560 554 640 512 700 Z" fill="#EB7A3C"/>
+  <circle cx="512" cy="470" r="50" fill="#161412"/>
+</svg>

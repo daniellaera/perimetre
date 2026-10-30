@@ -1,19 +1,17 @@
 # App Store submission (iOS)
 
-State on 2026-10-30: the backend that build 1.0.0 (2) needs is in production, and build 1.0.0 (2) is built
-but not uploaded. App Store Connect has not been touched. Everything below is ready to paste. Steps marked
-**(Daniel)** need the Apple account.
+State on 2026-10-30: the backend that the app needs is in production, and build **1.0.0 (3)**, the first
+with the final icon (`app/tool/app_icon.svg`), is built but not uploaded. App Store Connect has not been
+touched. Everything below is ready to paste. Steps marked **(Daniel)** need the Apple account.
 
 ## What is left before "Submit for Review" (Daniel)
 
-1. **Icon.** The current one is a placeholder from `app/tool/make_icon.swift`. A new icon means a new build
-   (bump `version: 1.0.0+N` in `app/pubspec.yaml`).
-2. **Upload and smoke test** the build through TestFlight (see "TestFlight" below) from a fresh install:
+1. **Upload and smoke test** the build through TestFlight (see "TestFlight" below) from a fresh install:
    perimeter → explanation page → iOS prompt → "Tester les notifications" → push received.
-3. **Create the app record** (table below), then paste the listing, upload the screenshots and answer the
+2. **Create the app record** (table below), then paste the listing, upload the screenshots and answer the
    age rating and App Privacy questions as written here.
-4. Check that **contact@perimetre.ch** receives mail (support address on the site and in the privacy page).
-5. Choose the build on the version page, add the review notes, and submit. Release: "Manually release this
+3. Check that **contact@perimetre.ch** receives mail (support address on the site and in the privacy page).
+4. Choose the build on the version page, add the review notes, and submit. Release: "Manually release this
    version", so the store page is checked before it goes live.
 
 ## App record
@@ -175,7 +173,7 @@ The device location is never read, and the app has no location usage string.
 
 ## Facts about the build (verified with `flutter build ipa --release`)
 
-- Bundle id `ch.perimetre.app`, version **1.0.0 (2)**, team `K433J5XKST`, iPhone only
+- Bundle id `ch.perimetre.app`, version **1.0.0 (3)**, team `K433J5XKST`, iPhone only
   (`TARGETED_DEVICE_FAMILY = 1`), iOS 15+. Language `fr` (`CFBundleDevelopmentRegion`,
   `CFBundleLocalizations`), display name "Périmètre".
 - Signed **Apple Distribution**; Release entitlements `aps-environment = production`
