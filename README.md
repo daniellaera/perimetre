@@ -158,8 +158,9 @@ The reference deployment runs on one VPS (2 vCPU, 4 GB RAM, Ubuntu 24.04) for th
    and `/opt/perimetre/secrets/firebase-service-account.json`.
 4. **Image:** CI (`.gitlab-ci.yml`) builds `backend/Dockerfile` on every push to main. Point
    `deploy/docker-compose.prod.yml` at your registry, or build the image on the server.
-5. **Deploy:** `deploy/ship.sh` (set `TARGET`, the SSH host alias, and `DIR` at its top). It syncs `deploy/`,
-   pulls the image, restarts and waits for health. Then run the first import:
+5. **Deploy:** `deploy/ship.sh <short-sha>` (set `TARGET`, the SSH host alias, `DIR` and `IMAGE` at its top).
+   It syncs `deploy/`, pulls that image tag, runs it and waits for health; `deploy/ship.sh --sync` only syncs
+   the files (site, Caddyfile, backup scripts). Then run the first import:
    `curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" https://api.<domain>/admin/import?mode=full`.
    That run records a baseline and sends no notifications.
 6. **Operations:** imports run at 10:15 (incremental) and Sundays 10:45 (full), Europe/Zurich

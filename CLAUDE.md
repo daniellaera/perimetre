@@ -537,8 +537,10 @@ machine only). Read it when it exists; never copy its host details back into thi
   framework` in `application-prod.yml`) because only Caddy can reach it.
 - **Server layout:** `deploy/bootstrap.sh` (idempotent: firewall, SSH hardening, fail2ban,
   unattended-upgrades, Docker, the app directory, the backup cron) prepares an Ubuntu host;
-  `deploy/ship.sh` syncs `deploy/` to the app directory, saves the backend log, pulls the image,
-  `up -d`, waits for health. `.env.prod` (template `deploy/.env.prod.example`) and `secrets/` (Firebase
+  `deploy/ship.sh <short-sha>` syncs `deploy/` to the app directory, saves the backend log, pulls that
+  image, tags it `backend:deployed` on the box (the compose default, so a hand-run `docker compose up` never
+  falls back to `:latest`), `up -d`, waits for health; `deploy/ship.sh --sync` only syncs the files and
+  reloads Caddy (site, Caddyfile, backup scripts) and never pulls or touches the backend. `.env.prod` (template `deploy/.env.prod.example`) and `secrets/` (Firebase
   service account) exist only on the server.
 - **Profile `prod`** (`application-prod.yml`): datasource from `DB_URL`/`DB_USER`/`DB_PASSWORD` with
   no defaults (unset = startup fails), Hikari pool 5, actuator exposes `health` only with
@@ -555,8 +557,9 @@ machine only). Read it when it exists; never copy its host details back into thi
 - **Images:** after the tests, every push to main builds `backend/Dockerfile` and pushes
   `registry.gitlab.com/daniellaera1/perimetre/backend:<short-sha>` and `:latest`, labelled with
   `org.opencontainers.image.revision`. CI never deploys.
-- **Deploy:** tests green → merge to main → pipeline green → `deploy/ship.sh` (or `deploy/ship.sh
-  <short-sha>` to pin or roll back; `--no-pull` uses the image already on the server). A migration
+- **Deploy:** tests green → merge to main → pipeline green → `deploy/ship.sh <short-sha>`
+  (always an explicit CI tag, never `:latest`; also how to roll back; `--no-pull <short-sha>` uses the image
+  already on the server). Files only (site, Caddyfile, backup scripts): `deploy/ship.sh --sync`. A migration
   that rewrites data (e.g. V6): run the backup script on the server first; rolling back past it means
   restoring that dump.
 - **Backups:** nightly cron runs `deploy/backup-offsite.sh`: `deploy/backup.sh` (`pg_dump -Fc` inside the db

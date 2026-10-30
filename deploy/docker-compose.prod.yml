@@ -42,8 +42,9 @@ services:
     mem_limit: 256m
 
   backend:
-    # BACKEND_TAG is set by ship.sh for a rollback or a pinned deploy; :latest otherwise.
-    image: registry.gitlab.com/daniellaera1/perimetre/backend:${BACKEND_TAG:-latest}
+    # :deployed is a local tag on the box, set by ship.sh to the short-sha image it deploys (BACKEND_TAG=<sha>
+    # only for its pull): every compose command keeps the deployed image and never falls back to :latest.
+    image: registry.gitlab.com/daniellaera1/perimetre/backend:${BACKEND_TAG:-deployed}
     restart: always
     logging: *default-logging
     depends_on:
