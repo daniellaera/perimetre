@@ -1,42 +1,22 @@
-# App Store / TestFlight checklist (iOS)
+# App Store submission (iOS)
 
-Prepared 2026-10-26. Nothing has been uploaded and App Store Connect has not been touched. The steps marked
-**(Daniel)** need your Apple account.
+State on 2026-10-30: the backend that build 1.0.0 (2) needs is in production, and build 1.0.0 (2) is built
+but not uploaded. App Store Connect has not been touched. Everything below is ready to paste. Steps marked
+**(Daniel)** need the Apple account.
 
-## Ready in the repo (verified with a local `flutter build ipa --release`)
+## What is left before "Submit for Review" (Daniel)
 
-- Bundle id `ch.perimetre.app`, version **1.0.0 (2)** (`app/pubspec.yaml` `version: 1.0.0+2`), team `K433J5XKST`,
-  iPhone only (`TARGETED_DEVICE_FAMILY = 1`, so no iPad screenshots are needed), iOS 15+.
-- The archive is signed **Apple Distribution: Daniel Laera (K433J5XKST)** with entitlements `aps-environment =
-  production`, `get-task-allow = false` and `beta-reports-active` (Release uses `Runner/RunnerRelease.entitlements`;
-  Debug and Profile keep `Runner.entitlements` with `development`). The export made Xcode create the
-  automatically managed profile "iOS Team Store Provisioning Profile: ch.perimetre.app" in the developer portal.
-- `ITSAppUsesNonExemptEncryption = NO` (HTTPS only, exempt), so there is no export-compliance question per build.
-- Language: `CFBundleDevelopmentRegion = fr`, `CFBundleLocalizations = [fr]`; display name "Périmètre".
-- `Runner/PrivacyInfo.xcprivacy` (bundled): no tracking. Collected: precise location, other user content and
-  device ID, all for app functionality and linked to the installation. Required-reason API: UserDefaults
-  `CA92.1`. The plugins (Firebase, shared_preferences, …) bring their own manifests.
-- Usage strings: none are needed. The app never asks for the device location (addresses are typed), and iOS
-  has no usage-description key for notifications (the system prompt is localised by iOS). An unused
-  `NSLocationWhenInUseUsageDescription` would only invite review questions, so it was not added.
-- App icon: a complete set from a placeholder design (white perimeter + pin on the app red, opaque 1024 px;
-  `app/tool/make_icon.swift`). The launch screen is the same mark on red. **Replace with a designed icon
-  when you have one.**
+1. **Icon.** The current one is a placeholder from `app/tool/make_icon.swift`. A new icon means a new build
+   (bump `version: 1.0.0+N` in `app/pubspec.yaml`).
+2. **Upload and smoke test** the build through TestFlight (see "TestFlight" below) from a fresh install:
+   perimeter → explanation page → iOS prompt → "Tester les notifications" → push received.
+3. **Create the app record** (table below), then paste the listing, upload the screenshots and answer the
+   age rating and App Privacy questions as written here.
+4. Check that **contact@perimetre.ch** receives mail (support address on the site and in the privacy page).
+5. Choose the build on the version page, add the review notes, and submit. Release: "Manually release this
+   version", so the store page is checked before it goes live.
 
-## Must happen before a build goes to testers
-
-1. **Backend deploy first.** The new app talks to `/devices` (multi-perimeter API, Flyway V6). Prod runs image
-   `caea82fb`, which does not have it, so a build uploaded before the deploy fails on "Mes périmètres". After
-   the validation nights: `pg_dump` (rollback past V6 = restore), then deploy `main`, then upload.
-2. **Map tiles: Mapbox tokens.** Release builds load Mapbox tiles (`docs/map-tiles.md`) and need the production
-   token: `app/config/prod.json` (copy of `config/example.json`), then `flutter build ipa --release
-   --dart-define-from-file=config/prod.json`. Without it the build fails ("Check Mapbox token").
-3. **Privacy page.** `deploy/site/privacy.html` was updated for multiple perimeters and the stored address
-   (the live page wrongly says the address is not stored). It goes live with the next `ship.sh`.
-4. **contact@perimetre.ch** is the support address on the site and in the privacy page. Check that the
-   mailbox exists and receives mail (Infomaniak Mail on the domain).
-
-## App Store Connect app record (Daniel)
+## App record
 
 My Apps → **+** → New App:
 
@@ -50,95 +30,168 @@ My Apps → **+** → New App:
 | User access | Full access |
 
 App Information:
-- Category: primary **Utilitaires**, secondary **Actualités**.
-- Content rights: "Yes, it contains third-party content", meaning SITG open data used under its open data
-  terms and credited in the app and on the site.
-- Age rating: answer "None/No" to every question → **4+**.
-- Pricing and availability: free; Switzerland and France (the border communes are in the map area).
-- Privacy policy URL: **https://perimetre.ch/privacy**
-- Support URL: **https://perimetre.ch** (contact address on the page). Marketing URL: optional, same.
 
-## App Privacy ("nutrition label") answers
+| Field | Value |
+|---|---|
+| Category | Primary **Utilitaires** (Utilities), secondary **Actualités** (News) |
+| Content rights | "Yes, it contains, shows, or accesses third-party content, and I have the necessary rights": SITG open data (credited in the app and on the site, as its terms require) and the Mapbox / OpenStreetMap map (attribution shown on the map) |
+| Privacy policy URL | https://perimetre.ch/privacy |
+| Support URL | https://perimetre.ch |
+| Marketing URL | https://perimetre.ch (optional) |
+| Copyright | `2026 Daniel Laera` |
+| Price | Free |
+| Availability | Switzerland and France (the map covers the border communes). Other countries are possible, but the content is only about Geneva. |
 
-"Do you or your third-party partners collect data from this app?" → **Yes**.
+## Store listing (French)
 
-| Data type | Collected | Use | Linked to the user | Tracking |
-|---|---|---|---|---|
-| Location → **Precise Location** (the address and coordinates of each perimeter) | Yes | App Functionality | **Yes**¹ | No |
-| User Content → **Other User Content** (optional perimeter name, e.g. "Domicile") | Yes | App Functionality | **Yes**¹ | No |
-| Identifiers → **Device ID** (push token + random installation id) | Yes | App Functionality | **Yes**¹ | No |
-| Contact info, health, financial, contacts, browsing/search history, purchases, usage data, diagnostics, other | No | | | |
+**Nom** (30 max): `Périmètre`
 
-¹ There is no account, but Apple counts data tied to a device-level identifier as linked. Answering
-"Not linked" would need the data de-identified before it reaches the server, and it is not: the push
-token is stored next to the perimeters. This is the conservative and accurate answer, and it must match
-`PrivacyInfo.xcprivacy`.
+**Sous-titre** (30 max, 29 used):
+```
+Chantiers autour de chez vous
+```
 
-Judgement calls, recorded:
-- The address search sends the typed text to geo.admin.ch (Swiss federal geoportal) as a plain API call.
-  No SDK is involved and nothing is stored by us, so it is not declared as collection. Same for map tiles
-  (Mapbox sees the displayed area; no Mapbox SDK, no telemetry) and FCM/APNs delivery (needed to send notifications, covered by
-  "Device ID"). The privacy page discloses all three.
-- No analytics and no crash reporting are linked into the app (firebase_core + firebase_messaging only).
+**Texte promotionnel** (170 max, 146 used; can be changed without a new version):
+```
+Soyez averti dès qu'une demande de construire est déposée, autorisée ou contestée près de chez vous, de votre travail ou de vos proches, à Genève.
+```
 
-## Store listing (French draft)
-
-**Nom** (≤ 30): `Périmètre`
-
-**Sous-titre** (≤ 30): `Chantiers autour de chez vous` (29)
-
-**Texte promotionnel** (≤ 170):
-> Soyez averti dès qu'une demande d'autorisation de construire est déposée, autorisée ou contestée près
-> de chez vous, de votre travail ou de vos proches, à Genève.
+**Mots-clés** (100 bytes max, 100 used; comma-separated, no spaces. The name and subtitle are already
+indexed, so "chantier" and "Périmètre" are not repeated):
+```
+permis,construire,autorisation,Genève,SITG,travaux,voisinage,urbanisme,opposition,quartier,immeuble
+```
 
 **Description:**
-> Un immeuble va-t-il pousser en face de chez vous ? Des arbres vont-ils être abattus dans votre rue ?
-> Périmètre vous prévient.
->
-> Choisissez une adresse à Genève, un rayon de 100 à 1000 mètres et les étapes qui vous intéressent :
-> Périmètre vous envoie une notification dès qu'une demande d'autorisation de construire y est déposée
-> ou change de statut.
->
-> • Nouvelle demande déposée : vous le savez pendant le délai d'opposition, pas après.
-> • Autorisation délivrée, début des travaux, recours, refus : suivez chaque dossier jusqu'au bout.
-> • Plusieurs périmètres : domicile, travail, l'appartement de vos parents… autant que vous voulez, chacun
-> avec son nom, son rayon et ses catégories.
-> • Explorez la carte : toutes les demandes en cours autour d'une adresse, avec leur description, leur
-> statut et le lien vers le dossier officiel.
->
-> Sans compte, sans publicité : l'application n'a besoin ni de votre nom ni de votre adresse e-mail.
-> Les données sont hébergées en Suisse.
->
-> Les données des dossiers proviennent des données ouvertes du SITG (Système d'information du
-> territoire à Genève). Périmètre est un projet indépendant, il n'est pas édité par l'État de Genève.
+```
+Un immeuble va-t-il pousser en face de chez vous ? Des arbres vont-ils être abattus dans votre rue ? Périmètre vous prévient.
 
-**Mots-clés** (≤ 100, comma-separated, no spaces):
-`autorisation,construire,permis,chantier,Genève,SITG,travaux,voisinage,urbanisme,opposition,quartier` (99)
+Choisissez une adresse dans le canton de Genève, un rayon de 100 à 1000 mètres et les étapes qui vous intéressent : Périmètre vous envoie une notification dès qu'une demande d'autorisation de construire y est déposée ou change de statut.
 
-**Notes pour la vérification (App Review)** (English is fine):
-> No account or login. To try it: Mes périmètres → type an address in Geneva (e.g. "Rue de Carouge 50") →
-> pick a suggestion → Activer les notifications. Notifications follow the official building-permit
-> data, which changes daily, so one may not arrive during the review. The Explorer tab shows current
-> dossiers around any Geneva address. Data source: SITG open data (Canton of Geneva).
+• Nouvelle demande déposée : vous le savez pendant le délai d'opposition, pas après.
+• Autorisation délivrée, début des travaux, recours, refus : suivez chaque dossier jusqu'au bout.
+• Plusieurs périmètres : domicile, travail, l'appartement de vos parents… jusqu'à 25, chacun avec son nom, son rayon et ses étapes.
+• Explorez la carte : toutes les demandes en cours autour d'une adresse, avec leur description, leur statut et le lien vers le dossier officiel.
+• Un fil « Récent » rassemble les derniers changements dans vos périmètres.
 
-**Screenshots:** 6.9" iPhone (1320 × 2868) is required. Use a dedicated "iPhone 17 Pro Max" simulator
-(never the one holding the prod subscription), against prod, with Explorer around a busy address and
-Mes périmètres with two perimeters. `xcrun simctl io <id> screenshot file.png` gives the right size.
+Sans compte et sans publicité : l'application ne vous demande ni nom, ni adresse e-mail, ni accès à votre position. Le serveur est hébergé en Suisse.
+
+Les dossiers proviennent des données ouvertes du SITG (Système d'information du territoire à Genève), mises à jour chaque jour. Périmètre est un projet indépendant : il n'est pas édité par l'État de Genève.
+```
+
+**Notes pour la vérification (App Review)** (English):
+```
+No account or login. The app covers the Canton of Geneva (Switzerland) only.
+
+To try it: tab "Mes périmètres" → type an address in Geneva (e.g. "Rue de Rive 15") → pick a suggestion → "Activer les notifications" → an explanation page, then the iOS permission prompt. "Tester les notifications" (below "Ajouter un périmètre") sends a test push to the device at once.
+
+Real alerts follow the official building-permit data (SITG open data, Canton of Geneva), imported once a day, so one may not arrive during the review. The "Explorer" tab shows the current dossiers around any Geneva address, and a dossier opens its official page in Safari.
+```
+
+## Screenshots
+
+6.9" iPhone, **1320 × 2868** PNG, light mode, no alpha channel, in `docs/app-store/`. Apple scales them down
+for the smaller iPhones. The app is iPhone only, so no iPad set is needed. Upload them in this order:
+
+| # | File | Shows |
+|---|---|---|
+| 1 | `1-explorer.png` | Explorer: the map around Rue de Rive 15, dossiers coloured by status, the list below |
+| 2 | `2-perimetres.png` | Mes périmètres: "Domicile" and "Travail", then the "Récent" feed of alerts |
+| 3 | `3-alerte.png` | An alert opened from the feed: description, status, dates, distance, official dossier link, SITG credit |
+| 4 | `4-nouveau-perimetre.png` | Adding a perimeter: name, address, radius, the five statuses |
+| 5 | `5-notifications.png` | The explanation shown before the iOS permission prompt |
+
+The dossiers are real SITG data (imported 2026-10-30) and so are the alerts: the status changes SITG published
+between 2026-10-24 and 2026-10-29. The addresses are public places in the old town, not anyone's home.
+
+Regenerate them (after a UI change, not after an icon change, since the icon does not appear in them) on the
+dedicated simulator **"Perimetre Store (iPhone 17 Pro Max)"**, which holds no production data, against the
+local backend in the `dev` profile:
+
+```bash
+docker compose up -d && (cd backend && ./gradlew bootRun --args='--spring.profiles.active=dev') &
+curl -X POST 'localhost:8090/admin/import?mode=full'      # fresh dossiers and real recent events
+cd app && SIMULATOR_ID=<id> flutter drive --driver=test_driver/store_screenshots.dart \
+  --target=integration_test/store_screenshots_test.dart --dart-define-from-file=config/dev.json -d <id>
+```
+
+The driver sets light mode and a 9:41 status bar, takes each picture with `xcrun simctl io` (status bar
+included), and removes the alpha channel. The feed needs events near Rue de Rive: when the local database has
+none, run a full import first (on a fresh database, run it twice: the first import only records a baseline).
+
+## Age rating
+
+App Store Connect → App Information → Age Rating. Answer **None** to every frequency question and **No** to
+every yes/no question. The result is **4+**. For the questions that need some thought:
+
+| Question | Answer | Why |
+|---|---|---|
+| Parental controls / age assurance | No | Neither exists in the app |
+| Unrestricted web access | No | No general browser. The official dossier opens in Safari; the map attribution links (Mapbox, "Improve this map") open fixed pages |
+| User-generated content | No | A perimeter's name is private to the device and never shown to anyone else |
+| Messaging or chat | No | |
+| Advertising | No | |
+| Medical or wellness topics | None | |
+| Violence, sexual content, nudity, profanity, horror, mature themes | None | Descriptions are SITG's administrative work descriptions |
+| Alcohol, tobacco, drugs | None | |
+| Gambling, simulated gambling, contests, loot boxes | No / None | |
+
+## App Privacy ("nutrition label")
+
+"Do you or your third-party partners collect data from this app?" → **Yes**. Declare exactly three types:
+
+| Data type | Purpose | Linked to the user | Tracking |
+|---|---|---|---|
+| Location → **Precise Location** (the address and coordinates of each perimeter) | App Functionality | **Yes**¹ | No |
+| User Content → **Other User Content** (the optional perimeter name, e.g. "Domicile") | App Functionality | **Yes**¹ | No |
+| Identifiers → **Device ID** (the push token and the app's random installation id) | App Functionality | **Yes**¹ | No |
+
+Everything else is **not collected**: contact info, health and fitness, financial info, sensitive info,
+contacts, emails or messages, photos or videos, audio, gameplay, customer support, browsing history, search
+history, user ID, purchases, product interaction, advertising data, other usage data, crash data, performance
+data, other diagnostic data, coarse location, other data.
+
+¹ There is no account, but the server stores the perimeters next to the push token, so the data is tied to
+one installation. Apple counts that as linked. "Not linked" would need the data de-identified before it
+reaches the server, and it is not.
+
+This matches what the code does:
+- Backend tables: `device` holds the push token, platform, failure counter and timestamps; `subscription`
+  holds the point, radius, statuses, label, address and timestamps; `notification` holds the send history.
+  Nothing else about the user is stored. Caddy keeps no access log.
+- App: `firebase_core` and `firebase_messaging` only. There is no Analytics, Crashlytics or Performance SDK,
+  no Mapbox SDK (plain tile requests) and no ads.
+- `app/ios/Runner/PrivacyInfo.xcprivacy` declares the same three types (linked, not tracking, app
+  functionality) and UserDefaults `CA92.1`. Keep the two in line, and in line with
+  https://perimetre.ch/privacy.
+
+Not declared as collection, by design, and disclosed on the privacy page instead:
+- The address search sends the typed text to geo.admin.ch (Swiss federal geoportal). This is a plain API
+  call, and we store nothing from it.
+- Mapbox sees the map area being viewed when it serves tiles.
+- FCM and APNs carry the push token and the notification text. This is covered by "Device ID".
+
+The device location is never read, and the app has no location usage string.
+
+## Facts about the build (verified with `flutter build ipa --release`)
+
+- Bundle id `ch.perimetre.app`, version **1.0.0 (2)**, team `K433J5XKST`, iPhone only
+  (`TARGETED_DEVICE_FAMILY = 1`), iOS 15+. Language `fr` (`CFBundleDevelopmentRegion`,
+  `CFBundleLocalizations`), display name "Périmètre".
+- Signed **Apple Distribution**; Release entitlements `aps-environment = production`
+  (`Runner/RunnerRelease.entitlements`). The automatically managed store profile exists in the portal.
+- `ITSAppUsesNonExemptEncryption = NO` (HTTPS only), so there is no export-compliance question per build.
+- No usage strings are needed: no device location, and iOS localises the notification prompt itself.
+- The release build calls `https://api.perimetre.ch` and needs the production Mapbox token
+  (`--dart-define-from-file=config/prod.json`; the "Check Mapbox token" build phase fails without it).
 
 ## TestFlight (Daniel)
 
-1. `cd app && flutter build ipa --release --dart-define-from-file=config/prod.json`. The release build defaults to `https://api.perimetre.ch`. Each new
-   upload needs a higher build number: bump `version: 1.0.0+N` in `pubspec.yaml`.
-2. Upload `app/build/ios/ipa/Périmètre.ipa`, either with **Transporter** (drag and drop, signed in with your
-   Apple ID) or with `xcrun altool --upload-app --type ios -f app/build/ios/ipa/*.ipa --apiKey <key id>
-   --apiIssuer <issuer id>` (App Store Connect API key, `.p8` in `~/.appstoreconnect/private_keys/`).
-   Xcode → Organizer → Distribute App → App Store Connect → Upload works too, from
-   `app/build/ios/archive/Runner.xcarchive`.
-3. Wait for processing (an e-mail, about 10–30 min). Encryption is answered by the plist.
-4. **Internal testing:** add yourself (App Store Connect users, up to 100) → install with the TestFlight app. No
-   review.
-5. **External testing:** fill in Test Information (feedback e-mail, beta description, no sign-in). The
-   first build goes through Beta App Review (about a day).
-6. Smoke test on a real iPhone, from a fresh install: create a perimeter → explanation page → permission
-   prompt → device registered (`GET /devices/{id}` on prod) → "Tester les notifications" → push received;
-   `POST /admin/test-push?subscription_id=…` → push received → tap opens the dossier.
+1. `cd app && flutter build ipa --release --dart-define-from-file=config/prod.json`. Every upload needs a
+   higher build number (`version: 1.0.0+N` in `pubspec.yaml`).
+2. Upload `app/build/ios/ipa/Périmètre.ipa` with **Transporter**, or with `xcrun altool --upload-app --type ios
+   -f app/build/ios/ipa/*.ipa --apiKey <key id> --apiIssuer <issuer id>`, or from Xcode → Organizer.
+3. Wait for processing (an e-mail, about 10–30 min).
+4. Internal testing: add yourself and install with the TestFlight app. No review is needed.
+5. Smoke test on a real iPhone, from a fresh install: create a perimeter → explanation page → permission
+   prompt → device registered (`GET /devices/{id}` on prod) → "Tester les notifications" → push received.

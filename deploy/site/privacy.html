@@ -47,7 +47,7 @@
 <main>
 	<a class="home" href="/">← Périmètre</a>
 	<h1>Confidentialité</h1>
-	<p class="updated">Dernière mise à jour : 26 octobre 2026 (plusieurs périmètres)</p>
+	<p class="updated">Dernière mise à jour : 30 octobre 2026 (sauvegardes hors site)</p>
 
 	<p class="lead">Périmètre fonctionne sans compte : pas de nom, pas d'adresse e-mail, pas de numéro de téléphone. Pour vous avertir, il lui suffit, pour chaque périmètre, d'une adresse, d'un rayon et d'un jeton de notification.</p>
 
@@ -62,7 +62,7 @@
 	<p>Le téléphone garde un identifiant aléatoire qui désigne cette installation de l'application et ses périmètres ; c'est le seul lien entre l'application et ces données. Rien n'est enregistré tant que vous ne faites qu'explorer la carte.</p>
 
 	<h2>Où sont les données</h2>
-	<p>Le serveur et sa base de données sont hébergés en Suisse, chez Infomaniak. Les sauvegardes restent en Suisse.</p>
+	<p>Le serveur et sa base de données sont hébergés en Suisse, chez Infomaniak. Les sauvegardes restent en Suisse : une copie sur le serveur et une copie chiffrée chez Swiss Backup (Infomaniak).</p>
 
 	<h2>Notifications</h2>
 	<p>Les notifications passent par Firebase Cloud Messaging (Google) et, sur iPhone, par le service de notifications d'Apple. Ces services reçoivent le jeton de notification et le texte de chaque notification. Ce texte ne contient que des informations publiques du SITG (type de projet, description des travaux) et la distance à votre point, jamais de nom.</p>
@@ -78,7 +78,7 @@
 	<ul>
 		<li>« Supprimer » un périmètre dans l'application l'efface immédiatement du serveur, avec son historique de notifications.</li>
 		<li>Si l'application est désinstallée, le jeton devient invalide et tous les périmètres de cette installation sont supprimés automatiquement après trois tentatives d'envoi refusées.</li>
-		<li>Les sauvegardes de la base de données sont gardées 14 jours, puis effacées.</li>
+		<li>Les sauvegardes de la base de données sont gardées 14 jours sur le serveur et jusqu'à 6 mois dans la copie chiffrée (une par jour pendant 7 jours, puis une par semaine et une par mois), puis effacées. Un périmètre supprimé disparaît donc des sauvegardes au plus tard 6 mois après.</li>
 		<li>Le serveur ne tient pas de journal d'accès ; ses journaux techniques ne contiennent ni adresse IP, ni coordonnées, ni jeton.</li>
 	</ul>
 

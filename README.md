@@ -166,7 +166,9 @@ The reference deployment runs on one VPS (2 vCPU, 4 GB RAM, Ubuntu 24.04) for th
    (`IMPORT_INCREMENTAL_CRON` / `IMPORT_FULL_CRON` to change them). A run that finds no SITG data newer than
    4 days ends `STALE_SOURCE`.
    `GET /admin/job-runs` lists the runs. The optional `HEALTHCHECK_PING_URL` alerts you when a scheduled run
-   is missing or fails. `deploy/backup.sh` keeps 14 days of `pg_dump`; copy them off the server.
+   is missing or fails. `deploy/backup.sh` keeps 14 days of `pg_dump`; `deploy/backup-offsite.sh` (nightly
+   cron) copies each to a restic repository on S3 and keeps 7 daily, 4 weekly and 6 monthly snapshots (bucket
+   and credentials: `deploy/set-restic-creds.sh`; restore check: `deploy/restic-restore-test.sh`).
 7. **App:** build with `--dart-define=API_BASE_URL=https://api.<domain>`, your bundle id, your Firebase
    config and your own Mapbox token (see "Map tokens"). Publish your own privacy page: the template in
    `deploy/site/privacy.html` describes what is stored.
