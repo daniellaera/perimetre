@@ -347,6 +347,7 @@ test/token_sync_test.dart          unit tests of TokenSync (run by CI's `flutter
 integration_test/subscription_flow_test.dart   simulator E2E against the local backend
 integration_test/screenshots_test.dart + test_driver/screenshots.dart   README screenshots (docs/screenshots)
 integration_test/map_tiles_test.dart + test_driver/map_screenshots.dart   base map check (build/map-screenshots)
+integration_test/store_screenshots_test.dart + test_driver/store_screenshots.dart   App Store screenshots (docs/app-store)
 config/example.json                template of the git-ignored config/dev.json and config/prod.json (Mapbox tokens)
 assets/mapbox-logo.png (+ 2.0x/, 3.0x/)   the Mapbox logo, required on the map
 ```
@@ -505,6 +506,10 @@ Setup (once per Firebase project; Android still needs steps 1 and 3):
   --driver=test_driver/screenshots.dart --target=integration_test/screenshots_test.dart
   --dart-define-from-file=config/dev.json -d <simulator id>`,
   then `sips --resampleWidth 600 ../docs/screenshots/*.png`.
+- App Store screenshots (6.9", 1320 × 2868, light, status bar 9:41, no alpha; real events: full import first):
+  `cd app && SIMULATOR_ID=<id> flutter drive --driver=test_driver/store_screenshots.dart
+  --target=integration_test/store_screenshots_test.dart --dart-define-from-file=config/dev.json -d <id>`
+  (the driver serves `localhost:8765/shot` and takes each picture with `simctl io`); see `docs/app-store.md`.
 - App: `flutter analyze`; `flutter test` (`test/token_sync_test.dart`: one PUT per token change, nothing
   before APNs, retries, 404, registration wait); `integration_test/subscription_flow_test.dart` drives the real app on a
   simulator against the local backend (two perimeters, simulated push tap → details sheet, unknown
@@ -554,8 +559,14 @@ machine only). Read it when it exists; never copy its host details back into thi
   <short-sha>` to pin or roll back; `--no-pull` uses the image already on the server). A migration
   that rewrites data (e.g. V6): run the backup script on the server first; rolling back past it means
   restoring that dump.
-- **Backups:** `deploy/backup.sh`, nightly from cron: `pg_dump -Fc` inside the db container, checked with
-  `pg_restore --list`, 14 days kept. Restore:
+- **Backups:** nightly cron runs `deploy/backup-offsite.sh`: `deploy/backup.sh` (`pg_dump -Fc` inside the db
+  container, checked with `pg_restore --list`, 14 days kept locally), then restic sends that dump to S3 as
+  `/perimetre.dump` (tag `pgdump`), `forget --prune` keeps 7 daily, 4 weekly, 6 monthly, `restic check`; its own
+  healthchecks.io check (`BACKUP_PING_URL`: `/start`, success, `/fail` + log tail). Credentials in
+  `.restic.env` (600, server only), written interactively by `deploy/set-restic-creds.sh` (prints the
+  generated repository password once; a re-run keeps it). `deploy/restic-restore-test.sh` restores a snapshot
+  into a throwaway `--network none` PostGIS container and compares row counts with prod. The privacy page
+  states the retention (6 months): keep them in line. Restore from the local dump:
   `docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < backups/<file>.dump`.
 - **Never** `docker compose down -v` on the server (deletes the database and Caddy's certificates),
   never copy `.env.prod` off the server or overwrite it from elsewhere, never print the values in it or
