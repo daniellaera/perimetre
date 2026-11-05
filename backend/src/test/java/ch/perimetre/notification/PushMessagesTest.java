@@ -58,7 +58,7 @@ class PushMessagesTest {
 
     @Test
     void everyChangeLabelStartsTheBody() {
-        assertThat(PushMessages.body(Groupe.DEPOSE, "pose d'une pergola")).isEqualTo("Nouvelle demande — Pose d'une pergola");
+        assertThat(PushMessages.body(Groupe.DEPOSE, "pose d'une pergola")).isEqualTo("Nouvelle demande · opposition possible — Pose d'une pergola");
         assertThat(PushMessages.body(Groupe.CHANTIER, "x")).isEqualTo("Les travaux commencent — X");
         assertThat(PushMessages.body(Groupe.RECOURS, "x")).isEqualTo("Un recours a été déposé — X");
         assertThat(PushMessages.body(Groupe.REFUSE, "x")).isEqualTo("Le projet ne se fera pas — X");
@@ -75,7 +75,7 @@ class PushMessagesTest {
     void missingDescriptionLeavesTheChangeLabelAlone() {
         assertThat(PushMessages.forEvent(notification("   ", Groupe.REFUSE, 455.2)).body())
                 .isEqualTo("Le projet ne se fera pas");
-        assertThat(PushMessages.forEvent(notification(null, Groupe.DEPOSE, 5)).body()).isEqualTo("Nouvelle demande");
+        assertThat(PushMessages.forEvent(notification(null, Groupe.DEPOSE, 5)).body()).isEqualTo("Nouvelle demande · opposition possible");
     }
 
     @Test
@@ -105,7 +105,7 @@ class PushMessagesTest {
         PushMessage m = PushMessages.test(match(0, SUBSCRIPTION, "Peillonnex", null, 2, 104, "x"));
 
         assertThat(m.title()).isEqualTo("104 m · Peillonnex");
-        assertThat(m.body()).isEqualTo("Nouvelle demande — Modification d'une installation de télécommunication "
+        assertThat(m.body()).isEqualTo("Nouvelle demande · opposition possible — Modification d'une installation de télécommunication "
                 + "mobile existante");
         assertThat(m.data()).isEqualTo(Map.of("kind", "TEST"));
     }

@@ -189,7 +189,7 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
     address without postcode and locality. With none to name: `"{distance} de {street address}"` (≤ 30
     chars), else just the distance.
   - body `"{event text} — {description, max 90 chars + …}"` (just `"{event text}"` without description). Event
-    text by `new_groupe`: DEPOSE "Nouvelle demande" · AUTORISE "Autorisation délivrée" · CHANTIER "Les travaux
+    text by `new_groupe`: DEPOSE "Nouvelle demande · opposition possible" · AUTORISE "Autorisation délivrée" · CHANTIER "Les travaux
     commencent" · RECOURS "Un recours a été déposé" · REFUSE "Le projet ne se fera pas".
   - data `{id_dossier, kind, new_groupe, subscription_id}` (nearest match). Summary: title "Périmètre",
     body "N nouveaux changements autour de chez vous" (N = events), or with named places

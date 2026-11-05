@@ -166,7 +166,7 @@ class DeviceApiIntegrationTest {
                 .andExpect(jsonPath("$.status").value("SENT"))
                 .andExpect(jsonPath("$.fcm_message_id").doesNotExist());
         assertThat(output).contains("PUSH (log only) token=dev-token-test-push title=\"104 m\" "
-                + "body=\"Nouvelle demande — Modification d'une installation de télécommunication mobile existante\" data={kind=TEST}");
+                + "body=\"Nouvelle demande · opposition possible — Modification d'une installation de télécommunication mobile existante\" data={kind=TEST}");
 
         mvc.perform(post("/devices/{id}/test-push", device))
                 .andExpect(status().isTooManyRequests())

@@ -24,7 +24,7 @@ final class PushMessages {
     private static final Pattern POSTCODE_AND_LOCALITY = Pattern.compile("\\s+\\d{4}\\s+\\S.*$");
 
     private static final Map<Groupe, String> EVENT_TEXTS = Map.of(
-            Groupe.DEPOSE, "Nouvelle demande",
+            Groupe.DEPOSE, "Nouvelle demande · opposition possible",
             Groupe.AUTORISE, "Autorisation délivrée",
             Groupe.CHANTIER, "Les travaux commencent",
             Groupe.RECOURS, "Un recours a été déposé",
