@@ -91,8 +91,8 @@ class PushPipelineIntegrationTest {
                 .param(subscriptionId)
                 .query(Boolean.class)
                 .single()).isTrue();
-        assertThat(output).contains("PUSH (log only)", "Pose d'une pergola à 111 m",
-                "Les travaux commencent. Pose d'une pergola", "new_groupe=CHANTIER");
+        assertThat(output).contains("PUSH (log only)", "111 m",
+                "Les travaux commencent — Pose d'une pergola", "new_groupe=CHANTIER");
 
         // Newest first, so the event just emitted leads even when the local DB holds other events nearby.
         mvc.perform(get("/subscriptions/{id}/events", subscriptionId))
@@ -144,8 +144,8 @@ class PushPipelineIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SENT"))
                 .andExpect(jsonPath("$.idDossier").value(DOSSIER_ID))
-                .andExpect(jsonPath("$.title").value("Pose d'une pergola à 111 m"))
-                .andExpect(jsonPath("$.body").value("Autorisation délivrée. Pose d'une pergola"));
+                .andExpect(jsonPath("$.title").value("111 m"))
+                .andExpect(jsonPath("$.body").value("Autorisation délivrée — Pose d'une pergola"));
 
         assertThat(output).contains("PUSH (log only) token=dev-token-test-push");
         assertThat(jdbc.sql("SELECT count(*) FROM event").query(Long.class).single()).isEqualTo(events);

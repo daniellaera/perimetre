@@ -181,22 +181,22 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   matching several subscriptions of one device is ONE push (all its rows marked by it). ≤ 3 events → one
   push per event; > 3 → ONE summary push and all rows marked SENT together. So at most 3 pushes per
   device per run.
-- **Payload** (`PushMessages`, French, never any names; only SITG's work description):
-  - title `"{label} à {distance} m"`: label per the vocabulary below (M/MPA → Démolition); when it is
-    "Demande", the first 40 chars of the description (trimmed, first letter capitalised, "…" when
-    cut). Distance rounded to the metre, from the nearest matching subscription point. Then
-    `" · {places}"` (≤ 40 chars) naming the matched subscriptions, nearest first (`placeName`): the
-    label; else, when the device has ≥ 2 subscriptions, the address without postcode and locality; else
-    nothing (a single unlabelled subscription, i.e. every legacy one, gets the original title).
-  - body `"{event text}. {description, max 90 chars + …}"` (just `"{event text}."` without
-    description). Event text by `new_groupe`: DEPOSE "Nouvelle demande déposée — délai d'opposition en
-    cours" · AUTORISE "Autorisation délivrée" · CHANTIER "Les travaux commencent" · RECOURS "Un recours a
-    été déposé" · REFUSE "Le projet ne se fera pas".
+- **Payload** (`PushMessages`, French, never any names; only SITG's work description). The title leads with
+  what a phone's lock screen would otherwise cut off:
+  - title `"{distance} · {places}"`: distance rounded to the metre ("104 m"; "1,2 km" from 1 km, decimal
+    comma), from the nearest matching subscription point. `{places}` (≤ 40 chars) names the matched
+    subscriptions, nearest first (`placeName`): the label; else, when the device has ≥ 2 subscriptions, the
+    address without postcode and locality. With none to name: `"{distance} de {street address}"` (≤ 30
+    chars), else just the distance.
+  - body `"{event text} — {description, max 90 chars + …}"` (just `"{event text}"` without description). Event
+    text by `new_groupe`: DEPOSE "Nouvelle demande" · AUTORISE "Autorisation délivrée" · CHANTIER "Les travaux
+    commencent" · RECOURS "Un recours a été déposé" · REFUSE "Le projet ne se fera pas".
   - data `{id_dossier, kind, new_groupe, subscription_id}` (nearest match). Summary: title "Périmètre",
     body "N nouveaux changements autour de chez vous" (N = events), or with named places
     "N nouveaux changements (Domicile : 3, Travail : 2)", data `{kind: SUMMARY, count}`. Test push
-    (`PushMessages.test`, `POST /devices/{id}/test-push`): title "Périmètre", body "Notification de test : les
-    alertes arrivent bien sur cet appareil.", data `{kind: TEST}`. iOS gets `aps.sound = default`.
+    (`PushMessages.test`, `POST /devices/{id}/test-push`): the same title/body builders on a sample dossier
+    (104 m, DEPOSE, "Modification d'une installation de télécommunication mobile existante") with the places of the
+    device's oldest subscription, data `{kind: TEST}`. iOS gets `aps.sound = default`.
 - **Senders** (`PushSender`, chosen by `PushConfig` at startup): `FcmPushSender` (firebase-admin) when
   the env var `FIREBASE_CREDENTIALS` points to an existing service-account JSON file, otherwise
   `LogPushSender`, which logs `PUSH (log only) token=… title="…" body="…" data={…}` at INFO and

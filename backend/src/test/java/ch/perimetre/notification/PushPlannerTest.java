@@ -69,7 +69,7 @@ class PushPlannerTest {
 
         assertThat(plan).hasSize(2);
         assertThat(plan.getFirst().notificationIds()).containsExactly(2L, 1L);
-        assertThat(plan.getFirst().message().title()).isEqualTo("Rénovation à 50 m · Domicile, Travail");
+        assertThat(plan.getFirst().message().title()).isEqualTo("50 m · Domicile, Travail");
         assertThat(plan.get(1).notificationIds()).containsExactly(3L);
     }
 

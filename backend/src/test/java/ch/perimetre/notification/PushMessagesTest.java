@@ -18,126 +18,126 @@ class PushMessagesTest {
     private static final UUID DEVICE = UUID.randomUUID();
     private static final UUID SUBSCRIPTION = UUID.fromString("00000000-0000-4000-8000-000000000001");
 
-    private static PendingNotification notification(String typeDossier, String typeOperation, String description,
-            Groupe newGroupe, double distanceM) {
+    /** A single unlabelled subscription at "Rue du Rhône 1 1204 Genève". */
+    private static PendingNotification notification(String description, Groupe newGroupe, double distanceM) {
         return new PendingNotification(1, DEVICE, SUBSCRIPTION, "token", null, "Rue du Rhône 1 1204 Genève", 1, 7,
                 "DD 123456/1", newGroupe == Groupe.DEPOSE ? EventKind.NEW : EventKind.GROUPE_CHANGE, newGroupe,
-                typeDossier, typeOperation, description, distanceM);
+                "DD", "VIL", description, distanceM);
     }
 
-    /** Event 7 (a villa, AUTORISE) matched by a subscription of a device holding {@code deviceSubscriptions}. */
+    /** Event {@code eventId} (AUTORISE) matched by a subscription of a device holding {@code deviceSubscriptions}. */
     private static PendingNotification match(long eventId, UUID subscriptionId, String label, String address,
-            int deviceSubscriptions, double distanceM) {
+            int deviceSubscriptions, double distanceM, String description) {
         return new PendingNotification(eventId * 10, DEVICE, subscriptionId, "token", label, address,
                 deviceSubscriptions, eventId, "DD " + eventId + "/1", EventKind.GROUPE_CHANGE, Groupe.AUTORISE, "DD",
-                "VIL", "construction d'une villa", distanceM);
+                "VIL", description, distanceM);
+    }
+
+    private static PendingNotification match(long eventId, UUID subscriptionId, String label, String address,
+            int deviceSubscriptions, double distanceM) {
+        return match(eventId, subscriptionId, label, address, deviceSubscriptions, distanceM, "construction d'une villa");
     }
 
     @Test
-    void titleUsesOperationLabelAndRoundedDistance() {
+    void titleIsDistanceAndLocalityBodyIsChangeLabelAndDescription() {
         PushMessage m = PushMessages.forEvent(
-                notification("DD", "VIL", "construction d'une villa", Groupe.AUTORISE, 149.6));
+                match(7, SUBSCRIPTION, "Peillonnex", null, 1, 103.6, "modification d'une installation"));
 
-        assertThat(m.title()).isEqualTo("Nouvelle villa à 150 m");
-        assertThat(m.body()).isEqualTo("Autorisation délivrée. Construction d'une villa");
-        assertThat(m.data()).isEqualTo(Map.of("id_dossier", "DD 123456/1", "kind", "GROUPE_CHANGE",
+        assertThat(m.title()).isEqualTo("104 m · Peillonnex");
+        assertThat(m.body()).isEqualTo("Autorisation délivrée — Modification d'une installation");
+        assertThat(m.data()).isEqualTo(Map.of("id_dossier", "DD 7/1", "kind", "GROUPE_CHANGE",
                 "new_groupe", "AUTORISE", "subscription_id", SUBSCRIPTION.toString()));
     }
 
-    @Test
-    void demandeLabelIsReplacedByFirst40CharsOfDescription() {
-        String description = "transformation et réaménagement d'un restaurant au 4ème étage   ";
-        PushMessage m = PushMessages.forEvent(notification("APA", "--", description, Groupe.DEPOSE, 87));
-
-        assertThat(m.title()).isEqualTo("Transformation et réaménagement d'un res… à 87 m");
-        assertThat(m.body()).isEqualTo("Nouvelle demande déposée — délai d'opposition en cours. "
-                + "Transformation et réaménagement d'un restaurant au 4ème étage");
-        assertThat(m.data()).containsEntry("kind", "NEW").containsEntry("new_groupe", "DEPOSE");
+    @ParameterizedTest
+    @CsvSource({"0, 0 m", "12.4, 12 m", "149.6, 150 m", "999.4, 999 m", "999.6, '1,0 km'", "1000, '1,0 km'",
+            "1234, '1,2 km'", "1250, '1,3 km'", "1960, '2,0 km'"})
+    void distanceIsMetresUnderAKilometreThenKilometresWithAComma(double metres, String expected) {
+        assertThat(PushMessages.distance(metres)).isEqualTo(expected);
     }
 
     @Test
-    void shortDescriptionIsNotTruncated() {
-        PushMessage m = PushMessages.forEvent(notification("APA", null, "pose d'une pergola", Groupe.CHANTIER, 12));
-
-        assertThat(m.title()).isEqualTo("Pose d'une pergola à 12 m");
-        assertThat(m.body()).isEqualTo("Les travaux commencent. Pose d'une pergola");
+    void everyChangeLabelStartsTheBody() {
+        assertThat(PushMessages.body(Groupe.DEPOSE, "pose d'une pergola")).isEqualTo("Nouvelle demande — Pose d'une pergola");
+        assertThat(PushMessages.body(Groupe.CHANTIER, "x")).isEqualTo("Les travaux commencent — X");
+        assertThat(PushMessages.body(Groupe.RECOURS, "x")).isEqualTo("Un recours a été déposé — X");
+        assertThat(PushMessages.body(Groupe.REFUSE, "x")).isEqualTo("Le projet ne se fera pas — X");
     }
 
     @Test
     void bodyDescriptionIsCappedAt90Chars() {
-        String description = "a".repeat(120);
-        PushMessage m = PushMessages.forEvent(notification("DD", "NOU", description, Groupe.RECOURS, 300));
+        PushMessage m = PushMessages.forEvent(notification("a".repeat(120), Groupe.RECOURS, 300));
 
-        assertThat(m.body()).isEqualTo("Un recours a été déposé. A" + "a".repeat(89) + "…");
+        assertThat(m.body()).isEqualTo("Un recours a été déposé — A" + "a".repeat(89) + "…");
     }
 
     @Test
-    void missingDescriptionKeepsDemandeAndShortBody() {
-        PushMessage m = PushMessages.forEvent(notification("APA", "--", "   ", Groupe.REFUSE, 455.2));
-
-        assertThat(m.title()).isEqualTo("Demande à 455 m");
-        assertThat(m.body()).isEqualTo("Le projet ne se fera pas.");
-    }
-
-    @ParameterizedTest
-    @CsvSource(nullValues = "null", value = {
-            "M,    REN,  Démolition",
-            "MPA,  null, Démolition",
-            "DD,   VIL,  Nouvelle villa",
-            "DD,   NOU,  Construction nouvelle",
-            "DD,   AGR,  Agrandissement",
-            "APA,  AGV,  Agrandissement de villa",
-            "APA,  REN,  Rénovation",
-            "APA,  PI,   Petite construction",
-            "DD,   EQU,  Aménagement public",
-            "DD,   AFF,  Changement d'affectation",
-            "APA,  --,   Demande",
-            "APA,  null, Demande",
-            "APA,  XYZ,  Demande"
-    })
-    void operationLabelFollowsVocabulary(String typeDossier, String typeOperation, String expected) {
-        assertThat(PushMessages.operationLabel(typeDossier, typeOperation)).isEqualTo(expected);
+    void missingDescriptionLeavesTheChangeLabelAlone() {
+        assertThat(PushMessages.forEvent(notification("   ", Groupe.REFUSE, 455.2)).body())
+                .isEqualTo("Le projet ne se fera pas");
+        assertThat(PushMessages.forEvent(notification(null, Groupe.DEPOSE, 5)).body()).isEqualTo("Nouvelle demande");
     }
 
     @Test
-    void testPushNamesNoDossier() {
-        PushMessage m = PushMessages.test();
+    void missingLocalityFallsBackToTheStreetAddress() {
+        PushMessage m = PushMessages.forEvent(notification("pose d'une pergola", Groupe.CHANTIER, 87));
 
-        assertThat(m.title()).isEqualTo("Périmètre");
-        assertThat(m.body()).isEqualTo("Notification de test : les alertes arrivent bien sur cet appareil.");
+        assertThat(m.title()).isEqualTo("87 m de Rue du Rhône 1");
+    }
+
+    @Test
+    void missingLocalityAndAddressLeavesTheDistance() {
+        PushMessage m = PushMessages.forEvent(match(7, SUBSCRIPTION, null, "  ", 1, 80, "x"));
+
+        assertThat(m.title()).isEqualTo("80 m");
+    }
+
+    @Test
+    void longLocalityAndAddressAreTruncated() {
+        assertThat(PushMessages.forEvent(match(7, SUBSCRIPTION, "L".repeat(50), null, 1, 80, "x")).title())
+                .isEqualTo("80 m · " + "L".repeat(30) + "…");
+        assertThat(PushMessages.forEvent(match(7, SUBSCRIPTION, null, "A".repeat(50) + " 1204 Genève", 1, 80, "x"))
+                .title()).isEqualTo("80 m de " + "A".repeat(30) + "…");
+    }
+
+    @Test
+    void testPushUsesTheRealFormatOnASampleAndNamesNoDossier() {
+        PushMessage m = PushMessages.test(match(0, SUBSCRIPTION, "Peillonnex", null, 2, 104, "x"));
+
+        assertThat(m.title()).isEqualTo("104 m · Peillonnex");
+        assertThat(m.body()).isEqualTo("Nouvelle demande — Modification d'une installation de télécommunication "
+                + "mobile existante");
         assertThat(m.data()).isEqualTo(Map.of("kind", "TEST"));
     }
 
     @Test
-    void singleUnlabelledSubscriptionIsNotNamed() {
-        PushMessage m = PushMessages.forEvent(match(7, SUBSCRIPTION, null, "Rue du Rhône 1 1204 Genève", 1, 80));
-
-        assertThat(m.title()).isEqualTo("Nouvelle villa à 80 m");
+    void testPushWithoutAnyPerimeterShowsJustTheDistance() {
+        assertThat(PushMessages.test(null).title()).isEqualTo("104 m");
     }
 
     @Test
-    void labelledSubscriptionIsNamedInTheTitle() {
-        PushMessage m = PushMessages.forEvent(match(7, SUBSCRIPTION, "Domicile", null, 1, 80));
+    void singleUnlabelledSubscriptionIsNamedByItsStreetAddress() {
+        PushMessage m = PushMessages.forEvent(match(7, SUBSCRIPTION, null, "Rue du Rhône 1 1204 Genève", 1, 80, "x"));
 
-        assertThat(m.title()).isEqualTo("Nouvelle villa à 80 m · Domicile");
+        assertThat(m.title()).isEqualTo("80 m de Rue du Rhône 1");
     }
 
     @Test
     void unlabelledSubscriptionOfASeveralSubscriptionDeviceIsNamedByItsStreetAddress() {
-        PushMessage m = PushMessages.forEvent(match(7, SUBSCRIPTION, null, "Rue du Rhône 1 1204 Genève", 2, 80));
+        PushMessage m = PushMessages.forEvent(match(7, SUBSCRIPTION, null, "Rue du Rhône 1 1204 Genève", 2, 80, "x"));
 
-        assertThat(m.title()).isEqualTo("Nouvelle villa à 80 m · Rue du Rhône 1");
+        assertThat(m.title()).isEqualTo("80 m · Rue du Rhône 1");
     }
 
     @Test
     void oneEventMatchingSeveralSubscriptionsNamesThemAllNearestFirst() {
         UUID travail = UUID.randomUUID();
         PushMessage m = PushMessages.forEvent(List.of(
-                match(7, SUBSCRIPTION, "Domicile", null, 3, 80),
-                match(7, travail, "Travail", null, 3, 240),
-                match(7, UUID.randomUUID(), "Domicile", null, 3, 300)));
+                match(7, SUBSCRIPTION, "Domicile", null, 3, 80, "x"),
+                match(7, travail, "Travail", null, 3, 240, "x"),
+                match(7, UUID.randomUUID(), "Domicile", null, 3, 300, "x")));
 
-        assertThat(m.title()).isEqualTo("Nouvelle villa à 80 m · Domicile, Travail");
+        assertThat(m.title()).isEqualTo("80 m · Domicile, Travail");
         assertThat(m.data()).containsEntry("subscription_id", SUBSCRIPTION.toString());
     }
 

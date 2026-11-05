@@ -165,8 +165,8 @@ class DeviceApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SENT"))
                 .andExpect(jsonPath("$.fcm_message_id").doesNotExist());
-        assertThat(output).contains("PUSH (log only) token=dev-token-test-push title=\"Périmètre\" "
-                + "body=\"Notification de test : les alertes arrivent bien sur cet appareil.\" data={kind=TEST}");
+        assertThat(output).contains("PUSH (log only) token=dev-token-test-push title=\"104 m\" "
+                + "body=\"Nouvelle demande — Modification d'une installation de télécommunication mobile existante\" data={kind=TEST}");
 
         mvc.perform(post("/devices/{id}/test-push", device))
                 .andExpect(status().isTooManyRequests())
@@ -252,8 +252,8 @@ class DeviceApiIntegrationTest {
                 .count()).isOne();
         assertThat(Pattern.compile("PUSH \\(log only\\) token=dev-token-neighbour ").matcher(output.getOut())
                 .results().count()).isOne();
-        assertThat(output).contains("title=\"Nouvelle villa à 111 m · Domicile, Travail\"",
-                "token=dev-token-neighbour title=\"Nouvelle villa à 111 m\"");
+        assertThat(output).contains("title=\"111 m · Domicile, Travail\"",
+                "token=dev-token-neighbour title=\"111 m de Rue de test 1\"");
         List<String> statuses = jdbc.sql("""
                         SELECT n.status FROM notification n JOIN subscription s ON s.id = n.subscription_id
                         WHERE s.device_id = ?""")

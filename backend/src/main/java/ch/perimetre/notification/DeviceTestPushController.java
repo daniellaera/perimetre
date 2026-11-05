@@ -58,7 +58,7 @@ class DeviceTestPushController {
         }
         PushResult result;
         try {
-            result = sender.send(token.get(), PushMessages.test());
+            result = sender.send(token.get(), PushMessages.test(oldestPerimeter(id)));
         } catch (RuntimeException e) {
             result = PushResult.failed(e.toString());
         }
@@ -78,6 +78,18 @@ class DeviceTestPushController {
                 .param("seconds", INTERVAL.toSeconds())
                 .query(String.class)
                 .optional();
+    }
+
+    /** The device's oldest subscription as a sample match for the test push's title; null without one. */
+    private PendingNotification oldestPerimeter(UUID id) {
+        return jdbc.sql("""
+                        SELECT label, address, count(*) OVER () AS total FROM subscription
+                        WHERE device_id = :id ORDER BY created_at, id LIMIT 1""")
+                .param("id", id)
+                .query((rs, i) -> new PendingNotification(0, id, null, null, rs.getString("label"),
+                        rs.getString("address"), rs.getInt("total"), 0, null, null, null, null, null, null,
+                        PushMessages.TEST_DISTANCE_M))
+                .optional().orElse(null);
     }
 
     private boolean exists(UUID id) {
