@@ -558,6 +558,20 @@ machine only). Read it when it exists; never copy its host details back into thi
   checked out in the job, the Firebase placeholders copied in, `flutter analyze`, `flutter test` when
   `app/test` exists) and `secrets-scan` (gitleaks over the branch history; reviewed false positives in
   `.gitleaksignore`). Merge only with a green MR pipeline.
+- **Remotes:** GitLab (`gitlab.com/daniellaera1/perimetre`, private) is the source of truth: CI, registry,
+  MRs, deploys. `github.com/daniellaera/perimetre` is its public mirror (same history, no CI). In the
+  operator's clone, `origin` fetches from GitLab and has two push URLs, GitLab first, so a plain
+  `git push` (main, tags) updates both. `gitlab` and `github` reach one side each. Set up a clone like this:
+  ```bash
+  git remote set-url --add --push origin git@gitlab.com:daniellaera1/perimetre.git
+  git remote set-url --add --push origin git@github.com:daniellaera/perimetre.git
+  git remote add gitlab git@gitlab.com:daniellaera1/perimetre.git
+  git remote add github git@github.com:daniellaera/perimetre.git
+  ```
+  Whatever goes through `origin` is public at once. Feature/MR branches go to GitLab only:
+  `git push -u gitlab <branch>` (GitLab deletes them on merge; the mirror only carries main). The pre-commit
+  gitleaks hook is the last check before anything reaches GitHub. A history rewrite on main must be
+  force-pushed to both.
 - **Images:** after the tests, every push to main builds `backend/Dockerfile` and pushes
   `registry.gitlab.com/daniellaera1/perimetre/backend:<short-sha>` and `:latest`, labelled with
   `org.opencontainers.image.revision`. CI never deploys.
