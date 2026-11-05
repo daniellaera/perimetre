@@ -5,7 +5,7 @@
 #   ssh -t perimetre-prod sudo /opt/perimetre/deploy/set-restic-creds.sh
 #
 # First run: generates the restic repository password, writes /opt/perimetre/.restic.env (600, owned by
-# ubuntu, which runs the backup), prints the password ONCE (save it in Vaultwarden: without it the
+# ubuntu, which runs the backup), prints the password ONCE (save it in your password manager: without it the
 # off-site copies cannot be read) and initialises the repository. A later run replaces the S3 keys and the
 # ping URL and keeps the password, so it never orphans the existing repository.
 set -euo pipefail
@@ -53,7 +53,7 @@ tmp=$(mktemp "$DIR/.restic.env.XXXXXX")
 trap 'rm -f "$tmp"' EXIT
 cat > "$tmp" <<ENV
 # Off-site backup (restic -> Swiss Backup S3). Written by set-restic-creds.sh; sourced by backup-offsite.sh
-# and restic-restore-test.sh. The repository password is also in Vaultwarden.
+# and restic-restore-test.sh. The repository password is also in your password manager.
 RESTIC_REPOSITORY=$REPOSITORY
 RESTIC_PASSWORD=$password
 AWS_ACCESS_KEY_ID=$access_key
@@ -71,8 +71,8 @@ if [ -n "$new_password" ]; then
 	cat >&2 <<MSG
 
 ================================================================================
- restic repository password (shown once, save it in Vaultwarden NOW as
- "Périmètre restic (Swiss Backup)"; without it the off-site backups are lost):
+ restic repository password (shown once, save it in your password manager NOW;
+ without it the off-site backups are lost):
 
    $password
 

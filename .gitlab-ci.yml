@@ -1,13 +1,12 @@
 # Périmètre — CI: tests merge requests, builds and pushes the backend image, never deploys.
 #
-# Deployment stays manual (deploy/ship.sh, or the `ship` skill), like DealJE.
+# Deployment stays manual (deploy/ship.sh).
 # Merge requests: backend tests (unit + context tests against a PostGIS service),
 # `flutter analyze` and a gitleaks scan of the history. On every push to main: the same checks, then
 # registry.gitlab.com/daniellaera1/perimetre/backend tagged :<short-sha> and :latest.
 # Other branches without an MR run nothing.
 #
-# Shared (instance) runners: the homelab runner is a DealJE project runner,
-# not available here.
+# Runs on GitLab's shared (instance) runners.
 
 stages:
   - test

@@ -29,7 +29,7 @@ class V6MigrationTest {
     private static final String PASSWORD = System.getenv().getOrDefault("DB_PASSWORD", "perimetre");
     private static final String DATABASE = "perimetre_v6_migration_test";
 
-    private static final UUID APP = UUID.fromString("33333333-3333-4333-8333-333333333333");
+    private static final UUID APP = UUID.fromString("d3658865-0e38-4830-99a7-36b4b4229025");
     private static final UUID FAILING = UUID.fromString("11111111-1111-4111-8111-111111111111");
     private static final UUID NO_PLATFORM = UUID.fromString("22222222-2222-4222-8222-222222222222");
 

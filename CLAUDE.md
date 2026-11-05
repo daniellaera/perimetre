@@ -225,7 +225,7 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   categories (as if just reaching its current groupe, so a tap opens the details sheet). Writes nothing
   (no event, no notification row; an invalid token is reported, not counted). Returns `{subscriptionId,
   idDossier, title, body, status, fcmMessageId, error}`; 404 for an unknown subscription or an empty
-  radius. The way to check FCM on prod without waiting for 03:15.
+  radius. The way to check FCM on prod without waiting for the 10:15 import.
 - `GET /admin/job-runs?limit=20` (1–200): `job_run` rows newest first (`started_at DESC, id DESC`),
   snake_case, plus `duration_ms`; `status` and `max_date_maj_sitg` tell whether SITG's data was fresh.
 - **`/admin/**` auth** (`ch.perimetre.admin`): a servlet filter on `/admin/*` wants
@@ -437,7 +437,8 @@ assets/mapbox-logo.png (+ 2.0x/, 3.0x/)   the Mapbox logo, required on the map
   launcher icons and the site's `apple-touch-icon.png` / `favicon.ico` (`deploy/site/favicon.svg` is the same
   mark with rounded corners, also inline in `index.html`). Needs `rsvg-convert` (librsvg).
   `flutter build ipa --release` archives and exports, signed Apple Distribution (verified 2026-10-26;
-  Xcode created the managed store profile). Nothing uploaded yet.
+  Xcode created the managed store profile). Published on the App Store:
+  https://apps.apple.com/ch/app/p%C3%A9rim%C3%A8tre/id6828071722.
 
 ### Firebase
 
@@ -519,7 +520,7 @@ Setup (once per Firebase project; Android still needs steps 1 and 3):
   dossier message, delete both; permission page → refused → notice on the card, test push refused while
   off, then sent and rate-limited after a resume with permission; adoption of a legacy subscription id):
   `cd app && flutter test integration_test/subscription_flow_test.dart -d <simulator id>`.
-  Android is not built locally (no Android SDK on this Mac); firebase_messaging 17 needs minSdk 24,
+  Android is not built locally (no Android SDK on the development Mac); firebase_messaging 17 needs minSdk 24,
   which is Flutter 3.47's default (`flutter.minSdkVersion` in `android/app`).
 
 ## Deployment (self-hosting)

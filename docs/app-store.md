@@ -1,10 +1,10 @@
 # App Store submission (iOS)
 
-State on 2026-10-30: the backend that the app needs is in production, and build **1.0.0 (3)**, the first
-with the final icon (`app/tool/app_icon.svg`), is built but not uploaded. App Store Connect has not been
-touched. Everything below is ready to paste. Steps marked **(Daniel)** need the Apple account.
+The app is published: https://apps.apple.com/ch/app/p%C3%A9rim%C3%A8tre/id6828071722. This page is the
+reference for the listing, the review answers and the next submissions. Steps marked **(account holder)**
+need the Apple developer account.
 
-## What is left before "Submit for Review" (Daniel)
+## Submission checklist (account holder)
 
 1. **Upload and smoke test** the build through TestFlight (see "TestFlight" below) from a fresh install:
    perimeter → explanation page → iOS prompt → "Tester les notifications" → push received.
@@ -183,7 +183,7 @@ The device location is never read, and the app has no location usage string.
 - The release build calls `https://api.perimetre.ch` and needs the production Mapbox token
   (`--dart-define-from-file=config/prod.json`; the "Check Mapbox token" build phase fails without it).
 
-## TestFlight (Daniel)
+## TestFlight (account holder)
 
 1. `cd app && flutter build ipa --release --dart-define-from-file=config/prod.json`. Every upload needs a
    higher build number (`version: 1.0.0+N` in `pubspec.yaml`).
