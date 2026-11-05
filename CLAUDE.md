@@ -438,7 +438,9 @@ assets/mapbox-logo.png (+ 2.0x/, 3.0x/)   the Mapbox logo, required on the map
   mark with rounded corners, also inline in `index.html`). Needs `rsvg-convert` (librsvg).
   `flutter build ipa --release` archives and exports, signed Apple Distribution (verified 2026-10-26;
   Xcode created the managed store profile). Published on the App Store:
-  https://apps.apple.com/ch/app/p%C3%A9rim%C3%A8tre/id6828071722.
+  https://apps.apple.com/ch/app/p%C3%A9rim%C3%A8tre/id6828071722. The site links to it with Apple's French black badge
+  (`deploy/site/app-store-badge-fr.svg`, as downloaded from Apple's marketing tools: never edit it) and
+  announces it with the Smart App Banner (`<meta name="apple-itunes-app" content="app-id=6828071722">`).
 
 ### Firebase
 

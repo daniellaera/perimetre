@@ -152,7 +152,8 @@ prints the matching query plan and timings.
 The reference deployment runs on one VPS (2 vCPU, 4 GB RAM, Ubuntu 24.04) for the whole canton.
 
 1. **DNS:** A records for your domain, `api.<domain>` and `www.<domain>` pointing to the server. Replace
-   `perimetre.ch` in `deploy/Caddyfile` and `deploy/site/`.
+   `perimetre.ch` in `deploy/Caddyfile` and `deploy/site/`, and the App Store link and app id in
+   `deploy/site/index.html`.
 2. **Server:** `ssh <host> 'sudo bash -s' < deploy/bootstrap.sh`. This sets up the firewall (22/80/443),
    SSH hardening, fail2ban, unattended upgrades, Docker, the app directory `/opt/perimetre` and the
    nightly backup cron.

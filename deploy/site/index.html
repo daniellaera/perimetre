@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-itunes-app" content="app-id=6828071722">
 <title>Périmètre — les chantiers autour de chez vous</title>
 <meta name="description" content="Périmètre vous avertit quand une demande d'autorisation de construire est déposée ou change de statut près de chez vous, à Genève.">
 <meta name="color-scheme" content="light dark">
@@ -49,21 +50,9 @@
 	.mark { width: 56px; height: 56px; display: block; margin-bottom: 1.5rem; }
 	h1 { font-size: clamp(2.2rem, 7vw, 3.2rem); line-height: 1.1; margin: 0 0 1rem; letter-spacing: -0.02em; }
 	.pitch { font-size: 1.2rem; color: var(--muted); margin: 0 0 2.5rem; max-width: 34rem; }
-	.badges { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
-	.badge {
-		display: inline-flex;
-		flex-direction: column;
-		justify-content: center;
-		min-width: 10.5rem;
-		padding: 0.55rem 1rem;
-		border: 1px solid var(--border);
-		border-radius: 0.75rem;
-		background: var(--card);
-		color: var(--muted);
-		font-size: 0.8rem;
-		line-height: 1.25;
-	}
-	.badge strong { color: var(--fg); font-size: 1.05rem; font-weight: 600; }
+	/* Apple's badge, unmodified; at least 40 px high, clear space of a quarter of its height around it. */
+	.store { display: inline-block; padding: 12px 0; line-height: 0; }
+	.store img { display: block; height: 48px; width: auto; }
 	footer {
 		width: 100%;
 		max-width: 40rem;
@@ -88,10 +77,7 @@
 	</svg>
 	<h1>Périmètre</h1>
 	<p class="pitch">Choisissez une ou plusieurs adresses à Genève et un rayon : Périmètre vous avertit dès qu'une demande d'autorisation de construire y est déposée ou change de statut.</p>
-	<ul class="badges" aria-label="Disponibilité">
-		<li class="badge"><span>Bientôt sur l'</span><strong>App Store</strong></li>
-		<li class="badge"><span>Bientôt sur</span><strong>Google Play</strong></li>
-	</ul>
+	<a class="store" href="https://apps.apple.com/ch/app/p%C3%A9rim%C3%A8tre/id6828071722"><img src="/app-store-badge-fr.svg" width="152" height="48" alt="Télécharger dans l'App Store"></a>
 </main>
 <footer>
 	<span>Données : SITG (Système d'information du territoire à Genève)</span>
