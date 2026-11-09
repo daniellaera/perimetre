@@ -592,7 +592,7 @@ assets/mapbox-logo.png (+ 2.0x/, 3.0x/)   the Mapbox logo, required on the map
   and Profile) and `Runner/RunnerRelease.entitlements` (`production`, Release), via `CODE_SIGN_ENTITLEMENTS`;
   `UIBackgroundModes` `remote-notification` in `Info.plist`.
 - **Release / TestFlight** (checklist and store texts: `docs/app-store.md`): version from `pubspec.yaml`
-  (`1.0.0+4`; bump the build number for every upload), iPhone only, `CFBundleDevelopmentRegion fr`,
+  (`1.1.0+6`; bump the build number for every upload), iPhone only, `CFBundleDevelopmentRegion fr`,
   `ITSAppUsesNonExemptEncryption NO`, `Runner/PrivacyInfo.xcprivacy` (precise location, other user content,
   device ID: app functionality, linked, no tracking; UserDefaults CA92.1). It must stay in line with the App
   Store privacy answers and `deploy/site/privacy.html`. No usage strings (no device location; iOS has

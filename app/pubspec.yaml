@@ -1,7 +1,7 @@
 name: perimetre
 description: "Périmètre: notifications of building-permit dossiers around your addresses in Geneva."
 publish_to: 'none'
-version: 1.0.1+5
+version: 1.1.0+6
 
 environment:
   sdk: ^3.13.5
