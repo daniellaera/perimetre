@@ -199,6 +199,8 @@ tables and responses for owner-like names.
     browser, it must not read it.** The RDPPF PDF link (`EXTRAIT_RDPPF_PDF`, public-law restrictions by EGRID)
     exists in the layer and is not imported (easy to add).
   - Until the first parcel import has run on a database, `parcelles` is `[]` everywhere.
+  - **Production (2026-11-09):** deployed with V9 and bootstrapped by one manual full import: 73,156 parcels (70 MB),
+    26,119 links; 16,437 dossiers with one parcel, 4,832 with two, 6 with three, 1 with none. See PROGRESS.md.
 
 ## Data model (Flyway V1–V9)
 

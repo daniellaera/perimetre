@@ -1,6 +1,6 @@
 # Progress: land-registry parcels (backend)
 
-Branch `feature/parcelles` (not merged, not deployed). Conventions and rationale: CLAUDE.md, section "Parcels".
+Merged into main (MR !13, `c0f0314`) and deployed to production on 2026-11-09 (see "Production" below). Conventions and rationale: CLAUDE.md, section "Parcels".
 
 ## Done
 - V9 migration: `parcelle` (73,156 rows, 70 MB with index), `dossier_parcelle`, `sync_state` row.
@@ -60,3 +60,24 @@ Same branch. Build number 1.0.0+4 (not uploaded).
 
 ## Next
 - Merge the branch, deploy the backend (see above), ship build 4 to TestFlight when wanted.
+
+# Production deploy (2026-11-09)
+
+Backend `c0f03147` (main), Flyway V8 -> V9. Pre-deploy dump taken and checked; MR and main pipelines green.
+- First full parcel import (`POST /admin/import/parcelles?mode=full`, job_run 20): 73,156 parcels fetched = source
+  count, 28.5 s, 26,119 links. Table 70 MB (whole database 114 MB).
+- Dossiers: 21,276 = 16,437 with one parcel, 4,832 with two, 6 with three, 1 with none. `/dossiers` answers
+  with `parcelles[]` filled (200 of 200 in central Geneva), existing fields unchanged, ~0.2 s over HTTPS.
+- Resources: disk 8.1 GB of 58 GB used; the backend stayed under 280 MB and Postgres peaked near 210 MB during
+  the import (limits 1.5 GB / 1.25 GB); no swap pressure, nothing restarted.
+- Scheduling confirmed in the startup log: parcels 10:30 daily and Sunday 11:15, dossiers unchanged (10:15 /
+  Sunday 10:45). `PARCELLE_HEALTHCHECK_PING_URL` is unset ("not set: no dead-man's-switch pings"), no WARN/ERROR.
+- Not done on purpose: no healthchecks.io check created, nothing in `app/` / TestFlight / App Store Connect.
+
+## Next
+- Watch the first scheduled parcel run tomorrow 10:30 (`GET /admin/job-runs`: `parcelle-incremental`, SUCCESS,
+  `fetched` small, `changed` near 0) and Sunday 11:15 (`parcelle-full`, `changed` 0).
+- Optional: create the healthchecks.io check (`30 10 * * *`) and set `PARCELLE_HEALTHCHECK_PING_URL`.
+- Ship app build 1.0.0+4 to TestFlight when wanted (the app already tolerates old/new backends).
+- Rollback, if ever needed: `deploy/ship.sh <previous short sha>` (the previous image tag is `a9885824`'s
+  revision in the registry); V9 tables are additive and stay.
