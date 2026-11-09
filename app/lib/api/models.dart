@@ -93,6 +93,46 @@ String? _sitgText(String? raw) {
   return text[0].toUpperCase() + text.substring(1);
 }
 
+/// Official portal of the State of Geneva for consulting the land registry; the fallback of [Parcelle.lienRf].
+const registreFoncierUrl = 'https://www.ge.ch/consulter-registre-foncier';
+
+/// A cadastral parcel a dossier is located on or next to (open data only: never an owner).
+class Parcelle {
+  const Parcelle({
+    required this.numero,
+    required this.commune,
+    required this.surfaceM2,
+    required this.egrid,
+    required this.lienRf,
+  });
+
+  final int numero;
+  final String commune;
+  final int? surfaceM2;
+  final String? egrid;
+
+  /// SITG's official "extrait foncier" link for the parcel; null when absent.
+  final String? lienRf;
+
+  /// Null when the entry has no usable number or commune (it is then dropped by [Dossier.fromJson]).
+  static Parcelle? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final numero = json['numero'];
+    final commune = json['commune'];
+    if (numero is! num || commune is! String) return null;
+    final surface = json['surface_m2'];
+    final egrid = json['egrid'];
+    final lien = json['lien_rf'];
+    return Parcelle(
+      numero: numero.toInt(),
+      commune: commune,
+      surfaceM2: surface is num ? surface.toInt() : null,
+      egrid: egrid is String && egrid.isNotEmpty ? egrid : null,
+      lienRf: lien is String && lien.isNotEmpty ? lien : null,
+    );
+  }
+}
+
 class Dossier {
   const Dossier({
     required this.idDossier,
@@ -108,6 +148,8 @@ class Dossier {
     required this.lat,
     required this.lng,
     required this.distanceM,
+    this.parcelles = const [],
+    this.lienRegistreFoncier,
   });
 
   final String idDossier;
@@ -126,6 +168,12 @@ class Dossier {
   final double lng;
   final double distanceM;
 
+  /// Parcels the dossier is on or next to (0 to 3); empty with an older backend or before its parcel import.
+  final List<Parcelle> parcelles;
+
+  /// The land registry portal, the fallback when a parcel has no `lien_rf`. Null with an older backend.
+  final String? lienRegistreFoncier;
+
   factory Dossier.fromJson(Map<String, dynamic> json) => Dossier(
     idDossier: json['id_dossier'] as String,
     typeDossier: json['type_dossier'] as String,
@@ -140,6 +188,11 @@ class Dossier {
     lat: (json['lat'] as num).toDouble(),
     lng: (json['lng'] as num).toDouble(),
     distanceM: (json['distance_m'] as num).toDouble(),
+    parcelles: [
+      for (final p in json['parcelles'] is List ? json['parcelles'] as List : const [])
+        ?Parcelle.tryParse(p),
+    ],
+    lienRegistreFoncier: json['lien_registre_foncier'] is String ? json['lien_registre_foncier'] as String : null,
   );
 
   bool get isDemolition => typeDossier == 'M' || typeDossier == 'MPA';
