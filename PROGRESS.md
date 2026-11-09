@@ -41,3 +41,22 @@ Branch `feature/parcelles` (not merged, not deployed). Conventions and rationale
 3. Optional: expose `EXTRAIT_RDPPF_PDF` (public-law restrictions by EGRID); add a parcel-count line to the README.
 4. Open question for the owner: the `lien_rf` extrait foncier page is ge.ch's; check once in a browser what it
    shows and that linking to it fits the privacy page / App Store answers (nothing is stored or read by us).
+
+# Progress: land-registry parcels (Flutter)
+
+Same branch. Build number 1.0.0+4 (not uploaded).
+
+## Done
+- Null-safe models (`Parcelle`, `Dossier.parcelles`, `lienRegistreFoncier`); details-sheet "Parcelle(s)" block
+  (see CLAUDE.md "App" > Parcels). Rows and feeds untouched.
+- `flutter analyze` clean; `flutter test` 17 pass (new `test/parcelles_test.dart`: older backend / null / malformed
+  fields, 0/1/2 parcels, Swiss format, link fallbacks, copy EGRID).
+- Run on the dev simulator against the local backend with real data, light and dark: 1 parcel, 2 parcels, none
+  (screenshots in `app/build/parcel-screenshots/`, not committed). The links were not opened (not fetched, by rule).
+
+## Notes
+- No backend change needed. For one parcel the heading and card both say "Parcelle" (kept: simple, consistent).
+- The simulator holding the prod subscription was not touched.
+
+## Next
+- Merge the branch, deploy the backend (see above), ship build 4 to TestFlight when wanted.

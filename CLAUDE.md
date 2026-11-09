@@ -415,6 +415,8 @@ lib/features/subscription/providers.dart   MySubscriptions (device id in prefs),
 lib/features/subscription/notifications.dart   permission primer page, "notifications off" notice, test push
 lib/features/subscription/subscription_screen.dart   Mes périmètres tab (list, add/edit page, delete, feed)
 test/token_sync_test.dart          unit tests of TokenSync (run by CI's `flutter test`)
+test/parcelles_test.dart           parcel parsing (missing/null fields) and the details sheet's parcel block (0, 1, 2 parcels)
+integration_test/parcelles_test.dart + test_driver/parcelles_screenshots.dart   details sheet with 1/2/0 parcels from the real local API (build/parcel-screenshots)
 integration_test/subscription_flow_test.dart   simulator E2E against the local backend
 integration_test/screenshots_test.dart + test_driver/screenshots.dart   README screenshots (docs/screenshots)
 integration_test/map_tiles_test.dart + test_driver/map_screenshots.dart   base map check (build/map-screenshots)
@@ -455,6 +457,15 @@ assets/mapbox-logo.png (+ 2.0x/, 3.0x/)   the Mapbox logo, required on the map
   as the tile provider.
 - **Details sheet title:** when the short label is "Demande", the description is the title and the
   "Demande" heading is dropped (the description is then not repeated below).
+- **Parcels** (details sheet only, never in rows or feeds; backend side: "Parcels"): `Dossier.parcelles`
+  (`Parcelle`: numero, commune, surfaceM2, egrid, lienRf) and `lienRegistreFoncier` are parsed null-safely (missing
+  field or older backend = empty list; a malformed entry is dropped). `ParcellesSection` is hidden when there are none;
+  else "Parcelle"/"Parcelles" (with the caption "Le dossier se situe sur ou à côté de ces parcelles." from 2 on), per
+  parcel "Parcelle n° N · commune", surface as `1'234 m²` (`formatSurface`), the EGRID (tap or long-press copies it),
+  and "Voir au registre foncier" + "Site officiel de l'État de Genève", opened with `LaunchMode.externalApplication`:
+  `lien_rf`, else `lien_registre_foncier`, else the constant `registreFoncierUrl`. No webview, nothing fetched from
+  ge.ch, nothing beyond the API's fields. The sheet scrolls (`SingleChildScrollView`). Run the real-data check:
+  `flutter drive --driver=test_driver/parcelles_screenshots.dart --target=integration_test/parcelles_test.dart -d <dev simulator id>`.
 - **SITG attribution** ("Source : SITG – Système d'information du territoire à Genève") ends the details
   sheet: the SITG open-data terms make the source mandatory. Keep it.
 - **Mes périmètres:** without a subscription, the tab is the form: optional name (`ChoiceChip`s
@@ -499,7 +510,7 @@ assets/mapbox-logo.png (+ 2.0x/, 3.0x/)   the Mapbox logo, required on the map
   and Profile) and `Runner/RunnerRelease.entitlements` (`production`, Release), via `CODE_SIGN_ENTITLEMENTS`;
   `UIBackgroundModes` `remote-notification` in `Info.plist`.
 - **Release / TestFlight** (checklist and store texts: `docs/app-store.md`): version from `pubspec.yaml`
-  (`1.0.0+3`; bump the build number for every upload), iPhone only, `CFBundleDevelopmentRegion fr`,
+  (`1.0.0+4`; bump the build number for every upload), iPhone only, `CFBundleDevelopmentRegion fr`,
   `ITSAppUsesNonExemptEncryption NO`, `Runner/PrivacyInfo.xcprivacy` (precise location, other user content,
   device ID: app functionality, linked, no tracking; UserDefaults CA92.1). It must stay in line with the App
   Store privacy answers and `deploy/site/privacy.html`. No usage strings (no device location; iOS has
