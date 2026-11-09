@@ -1,0 +1,43 @@
+# Progress: land-registry parcels (backend)
+
+Branch `feature/parcelles` (not merged, not deployed). Conventions and rationale: CLAUDE.md, section "Parcels".
+
+## Done
+- V9 migration: `parcelle` (73,156 rows, 70 MB with index), `dossier_parcelle`, `sync_state` row.
+- Import of SITG `CAD_PARCELLE_MENSU` (open data only, no owner fields): daily incremental on `DATEDT`
+  (10:30), weekly full (Sunday 11:15) with a 10% shrink guard, `job_run` rows, optional own
+  healthchecks.io check (`PARCELLE_HEALTHCHECK_PING_URL`), `POST /admin/import/parcelles`.
+- Spatial join dossier ↔ parcel (~5 cm tolerant), stored, rewritten after every dossier and parcel import.
+- API: `parcelles[]` (`egrid, commune, numero, surface_m2, lien_rf`) and `lien_registre_foncier` on
+  `/dossiers` and all event feeds; existing fields unchanged.
+- Tests: 153 backend tests green (new: link join, API shape, client paging, importer rules).
+
+## Verified (local, 2026-11-09)
+- Source count 73,156 = local 73,156; per-commune counts identical on all 48 communes.
+- Second full import: `changed=0` (idempotent). Incremental against the live source: 64 parcels in a 10-day
+  window, exactly 1 changed (a row I had corrupted by hand), repaired.
+- 20 random dossiers vs SITG's own point-in-polygon query (in native EPSG:2056): the official parcel is always
+  among ours; 1 in 10 also had a second, adjacent parcel (boundary point, see decisions).
+- A failed run (SQL error during development) rolled back everything and left a FAILED `job_run` row.
+
+## Decisions
+- The layer is `CAD_PARCELLE_MENSU`, not `CAD_PLANRF` (RF plan sheets, no parcels).
+- Keep all parcels with full geometry (70 MB): no simplification, no subset, no lazy lookup.
+- ~5 cm tolerance instead of strict `ST_Intersects`: ~21% of SITG dossier points sit within 1 cm of a parcel
+  edge, so strict picks a neighbour at random. 23% of dossiers therefore have 2+ parcels.
+- Links are computed at import time, not at query time; the dossier-side link step runs after the dossier
+  import's transaction and can only WARN (it never undoes an import or its notifications).
+- No hard dependency on ge.ch pages: we only expose links. `lien_rf` = SITG's published extrait foncier link;
+  `lien_registre_foncier` = `https://www.ge.ch/consulter-registre-foncier`.
+
+## Next
+1. Review/merge the branch (MR on GitLab), then deploy with `deploy/ship.sh`. Prod runs V8: V9 is additive and
+   small. The first scheduled parcel run (10:30 next morning) is the bootstrap: a full import (~30 s) that links
+   every dossier; until then `parcelles` is `[]`. Or run `POST /admin/import/parcelles?mode=full` right after the
+   deploy. Create the optional healthchecks.io check (`30 10 * * *`) and set `PARCELLE_HEALTHCHECK_PING_URL`.
+2. Flutter session: show `parcelles` in the details sheet; open `lien_rf` (per parcel) or
+   `lien_registre_foncier` (fallback) in the browser. Do not fetch/parse those pages in the app. Tell users a
+   boundary dossier can list two parcels.
+3. Optional: expose `EXTRAIT_RDPPF_PDF` (public-law restrictions by EGRID); add a parcel-count line to the README.
+4. Open question for the owner: the `lien_rf` extrait foncier page is ge.ch's; check once in a browser what it
+   shows and that linking to it fits the privacy page / App Store answers (nothing is stored or read by us).

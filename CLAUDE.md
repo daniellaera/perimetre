@@ -136,10 +136,78 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   10-26 batch was absent at 03:15 on 10-27 and present at 10:25; the 10-25 batch was there at 09:16 on
   10-26), hence the 10:15 incremental.
 
-## Data model (Flyway V1–V8)
+## Parcels (`ch.perimetre.parcelle`)
+
+Land-registry context for each dossier, from **open data only**. **Hard rule: never store, scrape or display
+owner names or any non-open registry data; never scrape the RF portal.** The source's `TYPE_PROPRI` and
+`PROPRI_PUBLIQUE` columns are deliberately not requested (`ParcelleClient.OUT_FIELDS`), and a test checks the
+tables and responses for owner-like names.
+
+- **Source:** SITG layer **`CAD_PARCELLE_MENSU`** ("parcelle en vigueur", official survey parcels):
+  `https://vector.sitg.ge.ch/arcgis/rest/services/CAD_PARCELLE_MENSU/FeatureServer/0/query`, same ArcGIS REST
+  conventions as the dossiers (`outSR=4326`, `f=geojson`, `orderByFields=OBJECTID ASC`, `resultOffset` paging; the
+  retry policy is shared, `ArcgisRetry`). 73,156 parcels (2026-11), all `VALIDITE = 'en vigueur'`, 48 communes.
+  **`CAD_PLANRF` is NOT the parcel layer** (it is the 1,632 RF *plan sheets*, no parcel numbers). Fields kept: `IDEDDP` (`<no_comm>:<no_parcelle>`, business key) · `EGRID` · `COMMUNE`
+  · `NO_COMM` · `NO_PARCELLE` · `SURFACE` (m²) · `DATEDT` (last mutation) · `LIEN_WWW` → `lien_rf` · geometry.
+- **Size decision (2026-11-09): keep every parcel with full geometry, no simplification, no subset.** The
+  table is 70 MB (50 MB heap + 6 MB GIST index + TOAST; whole local DB 129 MB), a fraction of the VPS's 60 GB,
+  and a subset ("parcels intersecting a dossier") would need a lazy lookup for every new dossier. Geometry is
+  requested with `geometryPrecision=7` (~1 cm, a third less data). Pages are 1000 features and handed to the
+  importer one at a time (never accumulated: the full layer is ~160 MB of GeoJSON, more than the 1.1 GB heap
+  should hold as JSON trees); the import is still one transaction.
+- **Import** (`ParcelleImporter`, `ParcelleJob`; `POST /admin/import/parcelles?mode=incremental|full`):
+  - `INCREMENTAL`: `VALIDITE = 'en vigueur' AND DATEDT >= <cursor>`, `cursor = sync_state.last_run (source
+    CAD_PARCELLE_MENSU) - 3 days` truncated to midnight UTC (DATEDT is date-only). `DATEDT` really is the last
+    mutation (58 parcels in 2026-11, 2,730 since 2025-01). Deletions (merged/split parcels) are invisible to it.
+  - `FULL`: every parcel; parcels no longer in the source are deleted; **refused (rolled back) when fewer than
+    90% of the stored parcels come back** (`checkNotShrunk`); every link is recomputed. ~30 s. The first run is
+    always FULL (`sync_state.bootstrapped = false`), whatever mode was asked, and the `job_run` row says so.
+  - Upsert by `id_parcelle`, rewriting a row only when it really differs (`IS DISTINCT FROM` +
+    `ST_OrderingEquals`), so `changed` = parcels inserted/modified (+ removed in FULL): a second full run after
+    a full run reports `changed=0`.
+  - Schedule (`application.yml`, zone Europe/Zurich fixed in the annotation): `perimetre.parcelle.incremental-cron`
+    (env `PARCELLE_INCREMENTAL_CRON`, daily **10:30**) and `perimetre.parcelle.full-cron` (env
+    `PARCELLE_FULL_CRON`, Sundays **11:15**), after the dossier imports of the same morning. `job_run` rows:
+    `parcelle-incremental` / `parcelle-full` (`fetched` = parcels fetched, `changed` as above,
+    `max_date_maj_sitg` = newest `DATEDT`, `notified/pushes/fcm_errors` = 0; no STALE_SOURCE: parcels are not
+    stamped daily). Optional **own** healthchecks.io check, env `PARCELLE_HEALTHCHECK_PING_URL` (schedule
+    `30 10 * * *`; the Sunday full run pings it too); unset = no-op. The dossier check stays untouched.
+- **Link dossier ↔ parcel** (`dossier_parcelle`, computed at import time and stored): the dossier's point in the
+  parcel with a **~5 cm tolerance** (`ST_DWithin(parcel.geom, dossier.geom, 5e-7°)`, uses `parcelle_geom_idx`),
+  not a strict `ST_Intersects`. Why: SITG places ~21% of dossier points **within 1 cm of a parcel edge** (the point
+  is on a boundary) and the outlines are rounded to ~1 cm, so a strict test picks one neighbour at random (found
+  by spot-checking against SITG's own point-in-polygon query). Such a dossier gets all touching parcels:
+  2026-11 local data, 21,098 dossiers: 16,311 with one parcel, 4,780 with two, 6 with three, 1 with none (a
+  point in the public domain). The dossier layer has no parcel field, so a spatial join is the only route.
+  - After each **dossier** import (`SitgImporter.linkParcels` → `DossierLinker`, own transaction after the
+    import's, failure = WARN only, never undoes the import): the fetched dossiers are relinked.
+  - After each **parcel** import: FULL relinks everything; INCREMENTAL relinks the dossiers linked to, or now
+    inside, a changed parcel, plus any dossier that has no link yet and lies in a parcel (self-heal of a failed
+    link step).
+  - Relinks take a transaction-scoped advisory lock (`ParcelleRepository.LINK_LOCK`): dossier and parcel
+    imports never rewrite links at once.
+- **API:** `DossierView` gains `parcelles` (array, `[]` when none: `egrid, commune, numero, surface_m2,
+  lien_rf`, ordered by commune number then parcel number) and `lien_registre_foncier`. `/dossiers` and every
+  event feed (`/devices/{id}/events`, `.../subscriptions/{sid}/events`, legacy) carry them (one extra query for
+  the whole list, ~20 ms for 200 dossiers); all pre-existing fields are unchanged.
+  - `lien_rf`: SITG's own official ge.ch "extrait foncier" link for the parcel
+    (`https://ge.ch/terextraitfoncier/rapport.aspx?commune=<no_comm>&parcelle=<no_parcelle>`), stored as published.
+    `lien_registre_foncier` = **`https://www.ge.ch/consulter-registre-foncier`** (constant
+    `DossierView.REGISTRE_FONCIER_URL`), the state's official page on consulting the land registry. We only
+    *link*: ge.ch resets non-browser clients, the pages were not fetched (and must not be scraped).
+    **Whether the extrait foncier page shows non-open data is up to ge.ch: the app opens it in the user's
+    browser, it must not read it.** The RDPPF PDF link (`EXTRAIT_RDPPF_PDF`, public-law restrictions by EGRID)
+    exists in the layer and is not imported (easy to add).
+  - Until the first parcel import has run on a database, `parcelles` is `[]` everywhere.
+
+## Data model (Flyway V1–V9)
 
 - `dossier`: one row per SITG dossier (see "SITG import"); `dossier_geog_gist` on `(geom::geography)`.
-- `sync_state(source PK, last_run, bootstrapped)`: one row, `SIT_AUTOR_DOSSIER`.
+- `sync_state(source PK, last_run, bootstrapped)`: one row per source, `SIT_AUTOR_DOSSIER` and (V9)
+  `CAD_PARCELLE_MENSU`.
+- `parcelle` (V9, see "Parcels"): `id_parcelle` PK, `egrid`, `commune`, `no_comm`, `no_parcelle`, `surface_m2`,
+  `date_mut`, `lien_rf`, `geom geometry(MultiPolygon,4326)` (GIST `parcelle_geom_idx`), `updated_at`.
+  `dossier_parcelle(id_dossier → dossier, id_parcelle → parcelle, PK both, ON DELETE CASCADE)`.
 - `device(id UUID PK, push_token, platform ios|android|null, consecutive_failures, created_at,
   updated_at, last_test_push_at)` (V6; V8 added `last_test_push_at`): one app installation.
   `consecutive_failures` counts runs whose push failed with an invalid token (see "Notifications");
@@ -226,6 +294,9 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   (no event, no notification row; an invalid token is reported, not counted). Returns `{subscriptionId,
   idDossier, title, body, status, fcmMessageId, error}`; 404 for an unknown subscription or an empty
   radius. The way to check FCM on prod without waiting for the 10:15 import.
+- `POST /admin/import/parcelles?mode=incremental|full` (default incremental; the first run is always full):
+  parcel import + relink, synchronous, `{jobRunId, mode, fetched, changed, removed, relinked, durationMs}`;
+  409 when one is already running, 400 for an unknown mode (see "Parcels").
 - `GET /admin/job-runs?limit=20` (1–200): `job_run` rows newest first (`started_at DESC, id DESC`),
   snake_case, plus `duration_ms`; `status` and `max_date_maj_sitg` tell whether SITG's data was fresh.
 - **`/admin/**` auth** (`ch.perimetre.admin`): a servlet filter on `/admin/*` wants
@@ -238,7 +309,7 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
   the table), ordered by `date_maj_sitg DESC, distance_m ASC, id_dossier ASC` (deterministic, since
   `date_maj_sitg` is day-granular), limit 200. Fields: `id_dossier, type_dossier, type_operation,
   operation, description, groupe, date_depot, date_maj_sitg, flags, lien_sad, lat, lng, distance_m`.
-  `operation` and `description` are SITG's raw texts. `operation` is "Non renseigné (valeur par
+  Also `parcelles` and `lien_registre_foncier` (see "Parcels"). `operation` and `description` are SITG's raw texts. `operation` is "Non renseigné (valeur par
   défaut…)" when `type_operation` is `--`. `description` may have trailing whitespace.
   Served by the expression index `dossier_geog_gist` on `(geom::geography)` (V2). Keep the predicate
   written as `ST_DWithin(geom::geography, …)` or the planner falls back to a seq scan.
@@ -492,6 +563,13 @@ Setup (once per Firebase project; Android still needs steps 1 and 3):
   mocked): `job_run` row on success and FAILED on exception, STALE_SOURCE + `/fail` ping on a source
   older than 4 days or an empty fetch, `/admin/job-runs` newest first with `max_date_maj_sitg`.
   `SourceFreshnessTest` (unit): the 4-day boundary (a 3-day stamp gap is not stale), newest date of a run.
+- Parcels: `ParcelleLinkIntegrationTest` (spatial join on two adjacent test parcels in the lake, rolled back:
+  inside / on the shared edge / 2 cm / 23 cm / 13 m away, relink replaces stale links, a changed or moved
+  parcel relinks its dossiers, self-heal, cascades, served fields), `DossierParcellesApiIntegrationTest`
+  (`parcelles` + `lien_registre_foncier` on `/dossiers` and the device feed, `[]` not null, existing fields
+  unchanged, no owner-like column or text), `ParcelleClientTest` (local HTTP server: paging, the query sent
+  incl. no owner fields, DATEDT cursor, 500 retried), `ParcelleImporterRulesTest` (first run is full, the 10%
+  shrink guard, cursor at midnight).
 - `MatchingRadiusIntegrationTest`: a subscription at the maximum radius matches an event 1 m inside it (and
   not one 1 m outside); the DB CHECK has the same bounds as `SubscriptionInput`; the API refuses max + 1.
 - `V6MigrationTest`: creates a throwaway database `perimetre_v6_migration_test` on the same server,
