@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
@@ -8,7 +7,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../api/models.dart';
 import '../../map/map_tiles.dart';
+import 'parcelles_section.dart';
 import 'providers.dart';
+
+export 'parcelles_section.dart';
 
 enum ListStatus { idle, loading, error, data }
 
@@ -35,22 +37,7 @@ IconData flagIcon(String flag) => switch (flag) {
 /// Flags shown as icons in list rows; the others appear only in the details sheet.
 const _rowFlags = {'arbres', 'logements', 'parking', 'piscine', 'antenne'};
 
-String formatDate(DateTime d) =>
-    '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
-
-/// Swiss thousands separator: 1234 -> "1'234".
-String formatSwissInt(int n) {
-  final digits = n.abs().toString();
-  final out = StringBuffer(n < 0 ? '-' : '');
-  for (var i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 == 0) out.write("'");
-    out.write(digits[i]);
-  }
-  return out.toString();
-}
-
-/// "1'234 m²", or null when the surface is unknown.
-String? formatSurface(int? m2) => m2 == null ? null : '${formatSwissInt(m2)} m²';
+String formatDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
 
 String truncate(String text, int maxChars) =>
     text.length <= maxChars ? text : '${text.substring(0, maxChars).trimRight()}…';
@@ -114,11 +101,7 @@ class _AddressFieldState extends ConsumerState<AddressField> {
           border: const OutlineInputBorder(),
           isDense: true,
           errorText: _failed ? 'Recherche d\'adresse indisponible' : null,
-          suffixIcon: IconButton(
-            icon: const Icon(Icons.clear),
-            tooltip: 'Effacer',
-            onPressed: controller.clear,
-          ),
+          suffixIcon: IconButton(icon: const Icon(Icons.clear), tooltip: 'Effacer', onPressed: controller.clear),
         ),
       ),
     );
@@ -417,7 +400,10 @@ class DossierRow extends StatelessWidget {
           ? null
           : Row(
               mainAxisSize: MainAxisSize.min,
-              children: [for (final f in flags) Icon(flagIcon(f), size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant)],
+              children: [
+                for (final f in flags)
+                  Icon(flagIcon(f), size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ],
             ),
     );
   }
@@ -435,10 +421,7 @@ class _SmallChip extends StatelessWidget {
       decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(4)),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onSecondaryContainer),
-        ),
+        child: Text(label, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onSecondaryContainer)),
       ),
     );
   }
@@ -481,7 +464,10 @@ class _DossierDetails extends StatelessWidget {
           children: [
             Text(descriptionIsTitle ? d.description! : d.operationLabel, style: text.titleLarge),
             const SizedBox(height: 4),
-            SelectableText(d.idDossier, style: text.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            SelectableText(
+              d.idDossier,
+              style: text.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
             if (d.description != null && !descriptionIsTitle) ...[
               const SizedBox(height: 12),
               Text(d.description!, style: text.bodyLarge),
@@ -529,7 +515,8 @@ class _DossierDetails extends StatelessWidget {
             // Required by the SITG open-data terms (source attribution).
             Text(
               'Source : SITG – Système d\'information du territoire à Genève',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -546,105 +533,6 @@ class _DossierDetails extends StatelessWidget {
         children: [
           Text(label, style: text.labelMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
           Text(value, style: text.bodyMedium),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Parcels (details sheet only)
-
-/// The "Parcelle(s)" block of the details sheet: number, commune, surface and EGRID of each parcel (tap or
-/// long-press the EGRID to copy it) and a button to the State of Geneva's land registry website. Open data only.
-class ParcellesSection extends StatelessWidget {
-  const ParcellesSection(this.parcelles, {super.key, this.fallbackUrl});
-
-  final List<Parcelle> parcelles;
-
-  /// Used for a parcel without `lien_rf`; the portal's constant when the backend does not send it.
-  final String? fallbackUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    if (parcelles.isEmpty) return const SizedBox.shrink();
-    final text = Theme.of(context).textTheme;
-    final muted = text.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 8),
-        const Divider(),
-        Text(parcelles.length > 1 ? 'Parcelles' : 'Parcelle', style: text.titleSmall),
-        if (parcelles.length > 1) ...[
-          const SizedBox(height: 2),
-          Text('Le dossier se situe sur ou à côté de ces parcelles.', style: muted),
-        ],
-        for (final p in parcelles) _ParcelleCard(p, fallbackUrl: fallbackUrl ?? registreFoncierUrl),
-      ],
-    );
-  }
-}
-
-class _ParcelleCard extends StatelessWidget {
-  const _ParcelleCard(this.p, {required this.fallbackUrl});
-
-  final Parcelle p;
-  final String fallbackUrl;
-
-  Future<void> _copyEgrid(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    await Clipboard.setData(ClipboardData(text: p.egrid!));
-    messenger.showSnackBar(const SnackBar(content: Text('EGRID copié.'), persist: false));
-  }
-
-  Future<void> _open(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final ok = await launchUrl(Uri.parse(p.lienRf ?? fallbackUrl), mode: LaunchMode.externalApplication);
-    if (!ok) messenger.showSnackBar(const SnackBar(content: Text('Impossible d\'ouvrir le lien.'), persist: false));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    final muted = text.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
-    final surface = formatSurface(p.surfaceM2);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Parcelle n° ${p.numero} · ${p.commune}', style: text.bodyLarge),
-          if (surface != null) Text(surface, style: muted),
-          if (p.egrid != null)
-            InkWell(
-              onTap: () => _copyEgrid(context),
-              onLongPress: () => _copyEgrid(context),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('EGRID ${p.egrid}', style: muted),
-                    const SizedBox(width: 6),
-                    Icon(Icons.copy, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ],
-                ),
-              ),
-            ),
-          const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed: () => _open(context),
-            icon: const Icon(Icons.open_in_new),
-            label: const Text('Voir au registre foncier'),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Text(
-              'Site officiel de l\'État de Genève',
-              style: text.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-          ),
         ],
       ),
     );

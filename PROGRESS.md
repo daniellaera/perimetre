@@ -54,6 +54,22 @@ keep working, anything with unclear terms is not imported. Conventions: CLAUDE.m
   uses SITG's own catalogue pages, which state the same access class).
 - One SITG parcel has a self-intersecting outline (`ST_Intersection` threw): handled with `ST_MakeValid` and tested.
 
+## Phase 2, Flutter: done (2026-11-09)
+- Null-safe models (`Batiment`, `Restriction`, new `Parcelle` fields); new `parcelles_section.dart` (card per parcel,
+  collapsed Bâtiments / Zone et restrictions only when data exists, EGRID copy, "Voir au registre foncier" in the
+  in-app browser with a caption naming the State of Geneva's site and what is there). Nothing in lists or feeds.
+- `flutter analyze` clean; `flutter test` 26 pass (parsing of missing/null/empty/malformed context, 0/1/2 parcels,
+  new sections collapsed then expanded, building cap text, launch mode `inAppBrowserView`, EGRID copy, labels).
+- Dev simulator (`56220C87…`, never the prod one) against the local backend with real data: dossier with 1 parcel, with
+  2 parcels, with none, light and dark, collapsed and expanded (`app/build/parcel-screenshots/`, git-ignored, 15 files).
+  Tapped the button: the Safari sheet opened over the app, then closed (`closeInAppWebView`) and the app was back on the
+  details sheet (`safari-3-ferme-retour-app.png`). No CAPTCHA appeared.
+- **Finding for the owner:** the ge.ch extract page opened by `lien_rf` showed, with no CAPTCHA and no login, the full
+  names of the parcel's private co-owners (with birth dates). That is exactly why it is only linked, never read by us.
+  The privacy page already says ge.ch may show owner data; consider whether the App Store review notes/answers should
+  say that the button opens it. I deleted the two Safari screenshots that showed those names.
+- Build number not bumped (still 1.0.1+5); version 1.1.0 and the TestFlight upload are for the next session.
+
 # Progress: land-registry parcels (backend)
 
 Merged into main (MR !13, `c0f0314`) and deployed to production on 2026-11-09 (see "Production" below). Conventions and rationale: CLAUDE.md, section "Parcels".

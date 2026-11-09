@@ -96,6 +96,87 @@ String? _sitgText(String? raw) {
 /// Official portal of the State of Geneva for consulting the land registry; the fallback of [Parcelle.lienRf].
 const registreFoncierUrl = 'https://www.ge.ch/consulter-registre-foncier';
 
+String? _str(Object? v) => v is String && v.trim().isNotEmpty ? v.trim() : null;
+int? _int(Object? v) => v is num ? v.toInt() : null;
+
+/// A building standing on a parcel (official survey). Every field but the number may be missing.
+class Batiment {
+  const Batiment({
+    this.egid,
+    this.numero,
+    this.destination,
+    this.surfaceM2,
+    this.surfaceSurParcelleM2,
+    this.anneeConstruction,
+    this.adresses = const [],
+  });
+
+  final int? egid;
+  final String? numero;
+  final String? destination;
+
+  /// Footprint of the whole building, and of the part inside this parcel.
+  final int? surfaceM2;
+  final int? surfaceSurParcelleM2;
+  final int? anneeConstruction;
+  final List<String> adresses;
+
+  /// Null for anything that is not an object; the other fields are optional.
+  static Batiment? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final adresses = json['adresses'];
+    return Batiment(
+      egid: _int(json['egid']),
+      numero: _str(json['numero']),
+      destination: _str(json['destination']),
+      surfaceM2: _int(json['surface_m2']),
+      surfaceSurParcelleM2: _int(json['surface_sur_parcelle_m2']),
+      anneeConstruction: _int(json['annee_construction']),
+      adresses: [for (final a in adresses is List ? adresses : const []) ?_str(a)],
+    );
+  }
+}
+
+/// A public-law land-use zone covering (part of) a parcel (RDPPF, open data).
+class Restriction {
+  const Restriction({
+    required this.nom,
+    this.type,
+    this.code,
+    this.description,
+    this.statut,
+    this.surfaceM2,
+    this.partPct,
+  });
+
+  /// `ZONE` (zone d'affectation) or `ZONE_DEVELOPPEMENT`; other values are shown as a plain zone.
+  final String? type;
+  final String? code;
+  final String nom;
+  final String? description;
+  final String? statut;
+  final int? surfaceM2;
+
+  /// Share of the parcel covered, 1 to 100.
+  final int? partPct;
+
+  /// Null without a name (nothing readable to show).
+  static Restriction? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final nom = _str(json['nom']) ?? _str(json['code']);
+    if (nom == null) return null;
+    return Restriction(
+      nom: nom,
+      type: _str(json['type']),
+      code: _str(json['code']),
+      description: _str(json['description']),
+      statut: _str(json['statut']),
+      surfaceM2: _int(json['surface_m2']),
+      partPct: _int(json['part_pct']),
+    );
+  }
+}
+
 /// A cadastral parcel a dossier is located on or next to (open data only: never an owner).
 class Parcelle {
   const Parcelle({
@@ -104,6 +185,12 @@ class Parcelle {
     required this.surfaceM2,
     required this.egrid,
     required this.lienRf,
+    this.type,
+    this.planRf,
+    this.lieuDit,
+    this.nbBatiments = 0,
+    this.batiments = const [],
+    this.restrictions = const [],
   });
 
   final int numero;
@@ -114,21 +201,38 @@ class Parcelle {
   /// SITG's official "extrait foncier" link for the parcel; null when absent.
   final String? lienRf;
 
+  /// Category as published ("privé", "DP communal"...), the registry plan number and the local name.
+  final String? type;
+  final String? planRf;
+  final String? lieuDit;
+
+  /// Real number of buildings on the parcel; [batiments] holds the largest ones (the backend caps the list).
+  final int nbBatiments;
+  final List<Batiment> batiments;
+  final List<Restriction> restrictions;
+
   /// Null when the entry has no usable number or commune (it is then dropped by [Dossier.fromJson]).
+  /// Everything added in release 1.1 is optional: an older backend sends none of it.
   static Parcelle? tryParse(Object? json) {
     if (json is! Map) return null;
     final numero = json['numero'];
     final commune = json['commune'];
     if (numero is! num || commune is! String) return null;
-    final surface = json['surface_m2'];
-    final egrid = json['egrid'];
-    final lien = json['lien_rf'];
+    final batiments = json['batiments'];
+    final restrictions = json['restrictions'];
+    final parsedBatiments = [for (final b in batiments is List ? batiments : const []) ?Batiment.tryParse(b)];
     return Parcelle(
       numero: numero.toInt(),
       commune: commune,
-      surfaceM2: surface is num ? surface.toInt() : null,
-      egrid: egrid is String && egrid.isNotEmpty ? egrid : null,
-      lienRf: lien is String && lien.isNotEmpty ? lien : null,
+      surfaceM2: _int(json['surface_m2']),
+      egrid: _str(json['egrid']),
+      lienRf: _str(json['lien_rf']),
+      type: _str(json['type']),
+      planRf: _str(json['plan_rf']),
+      lieuDit: _str(json['lieu_dit']),
+      nbBatiments: _int(json['nb_batiments']) ?? parsedBatiments.length,
+      batiments: parsedBatiments,
+      restrictions: [for (final r in restrictions is List ? restrictions : const []) ?Restriction.tryParse(r)],
     );
   }
 }
@@ -189,8 +293,7 @@ class Dossier {
     lng: (json['lng'] as num).toDouble(),
     distanceM: (json['distance_m'] as num).toDouble(),
     parcelles: [
-      for (final p in json['parcelles'] is List ? json['parcelles'] as List : const [])
-        ?Parcelle.tryParse(p),
+      for (final p in json['parcelles'] is List ? json['parcelles'] as List : const []) ?Parcelle.tryParse(p),
     ],
     lienRegistreFoncier: json['lien_registre_foncier'] is String ? json['lien_registre_foncier'] as String : null,
   );

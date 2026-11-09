@@ -528,15 +528,26 @@ assets/mapbox-logo.png (+ 2.0x/, 3.0x/)   the Mapbox logo, required on the map
   as the tile provider.
 - **Details sheet title:** when the short label is "Demande", the description is the title and the
   "Demande" heading is dropped (the description is then not repeated below).
-- **Parcels** (details sheet only, never in rows or feeds; backend side: "Parcels"): `Dossier.parcelles`
-  (`Parcelle`: numero, commune, surfaceM2, egrid, lienRf) and `lienRegistreFoncier` are parsed null-safely (missing
-  field or older backend = empty list; a malformed entry is dropped). `ParcellesSection` is hidden when there are none;
-  else "Parcelle"/"Parcelles" (with the caption "Le dossier se situe sur ou à côté de ces parcelles." from 2 on), per
-  parcel "Parcelle n° N · commune", surface as `1'234 m²` (`formatSurface`), the EGRID (tap or long-press copies it),
-  and "Voir au registre foncier" + "Site officiel de l'État de Genève", opened with `LaunchMode.externalApplication`:
-  `lien_rf`, else `lien_registre_foncier`, else the constant `registreFoncierUrl`. No webview, nothing fetched from
-  ge.ch, nothing beyond the API's fields. The sheet scrolls (`SingleChildScrollView`). Run the real-data check:
-  `flutter drive --driver=test_driver/parcelles_screenshots.dart --target=integration_test/parcelles_test.dart -d <dev simulator id>`.
+- **Parcels** (details sheet only, never in rows or feeds; backend side: "Parcels", "Parcel context"): `Dossier.parcelles`
+  (`Parcelle`: numero, commune, surfaceM2, egrid, lienRf, and since 1.1 `type`, `planRf`, `lieuDit`, `nbBatiments`,
+  `batiments` (`Batiment`: numero, destination, surfaceM2, surfaceSurParcelleM2, anneeConstruction, adresses),
+  `restrictions` (`Restriction`: type, nom, description, partPct...)) and `lienRegistreFoncier` are parsed null-safely
+  (missing, null, empty or malformed = absent; an older backend sends none of the 1.1 fields; a malformed entry is
+  dropped). Code in `lib/features/explore/parcelles_section.dart`. `ParcellesSection` is hidden when there are none;
+  else "Parcelle"/"Parcelles" (caption "Le dossier se situe sur ou à côté de ces parcelles." from 2 on) and one
+  `ParcelleCard` per parcel: "Parcelle n° N · commune", "surface (`1'234 m²`) · category" (`parcelleTypeLabel`: privé →
+  Privé, DP communal → Domaine public communal...), "Plan RF n · Lieu-dit x", the EGRID (tap or long-press copies it),
+  then two **collapsed** `ExpansionTile`s shown only when they have data: "Bâtiments (n)" (number · destination, "Sur la
+  parcelle : x m² (total y m²)", year, addresses, "et n autres bâtiments" when the backend capped the list) and
+  "Zone et restrictions" (name, "Zone d'affectation|de développement · 98 % de la parcelle", SITG's description).
+  Last, **"Voir au registre foncier"** with "Site officiel de l'État de Genève : propriétaire et extrait officiel.": it
+  opens `lien_rf`, else `lien_registre_foncier`, else the constant `registreFoncierUrl`, with
+  `LaunchMode.inAppBrowserView` (SFSafariViewController, the user stays in the app; `openInAppBrowser`). No webview,
+  nothing fetched from ge.ch by the app, nothing beyond the API's fields. The sheet scrolls. Real-data check on a dev
+  simulator, with the local backend: `SIMULATOR_ID=<id> flutter drive --driver=test_driver/parcelles_screenshots.dart
+  --target=integration_test/parcelles_test.dart -d <id>` (screenshots via `simctl` in `build/parcel-screenshots/`, it also
+  opens and closes the Safari sheet with `closeInAppWebView()`; **delete the Safari screenshots afterwards**: the ge.ch
+  extract page shows private individuals' names).
 - **SITG attribution** ("Source : SITG – Système d'information du territoire à Genève") ends the details
   sheet: the SITG open-data terms make the source mandatory. Keep it.
 - **Mes périmètres:** without a subscription, the tab is the form: optional name (`ChoiceChip`s
