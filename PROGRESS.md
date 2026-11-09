@@ -1,3 +1,22 @@
+# Production deploy of release 1.1.0 backend (2026-11-09)
+
+Main `70ec9cc` (image `70ec9ccb`, CI green), Flyway V9 -> V10 (applied in 76 ms), pre-deploy dump taken and checked
+(42 MB). Startup log: no WARN/ERROR; the four new crons registered (buildings daily 10:40, all layers Sunday 11:30);
+`CONTEXTE_HEALTHCHECK_PING_URL` unset logs one INFO line and nothing else. Static site synced: `/` and `/privacy` 200 with the
+new text (privacy page: buildings, addresses, zones, local names; the registry item now names the in-app sheet and the
+identification data ge.ch shows).
+- Full imports by hand (job_run 21-25, all SUCCESS): parcels 73,156 (33 s), buildings 83,088 (465 s), addresses 54,719
+  (11 s), zones 2,479 + 756 (69 s), local names 2,038 (8 s). Every count equals the source and the local DB; links 86,285
+  building and 96,330 zone, 26,119 dossier links, 73,156 parcels with type and plan.
+- API: `/dossiers` around central Geneva, 200 dossiers: all existing fields present, 194 with buildings, 200 with zones;
+  417 KB (gzipped by Caddy), 0.16-0.25 s over HTTPS.
+- `VACUUM FULL parcelle`: exclusive lock for **1.3 s**; table 197 MB -> 74 MB; the API answered 200 in 0.17 s right after.
+- Sizes: parcelle 74 MB, batiment 43, dossier 22, parcelle_batiment 11, parcelle_zone 10, adresse 9, zone_affectation 5,
+  lieu_dit 3; database 202 MB. Disk 8.7 GB of 58 GB; RAM 1.4 GB used of 3.9 GB, no swap; backend 290 MB, db 554 MB (cache).
+- Rollback, if ever needed: `deploy/ship.sh c0f03147` (V10 is additive and stays).
+- Next: watch tomorrow's 10:40 `batiment-incremental` and Sunday 11:30 runs (`GET /admin/job-runs`). App build 1.1.0+6 is
+  built locally, not uploaded.
+
 # Release 1.1.0: open parcel data shown natively (branch work, NOT deployed)
 
 Goal: show every OPEN datum about a parcel in the app instead of sending users to ge.ch's extract page. Hard rules:
