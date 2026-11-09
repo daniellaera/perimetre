@@ -14,6 +14,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
+import ch.perimetre.parcelle.ParcelleRepository;
+import ch.perimetre.parcelle.ParcelleView;
+
 @Repository
 public class DossierRepository {
 
@@ -55,10 +58,12 @@ public class DossierRepository {
     private final JdbcClient jdbc;
     // JdbcClient has no batch API; JdbcTemplate is used for the batched upsert only.
     private final JdbcTemplate jdbcTemplate;
+    private final ParcelleRepository parcelles;
 
-    public DossierRepository(JdbcClient jdbc, JdbcTemplate jdbcTemplate) {
+    public DossierRepository(JdbcClient jdbc, JdbcTemplate jdbcTemplate, ParcelleRepository parcelles) {
         this.jdbc = jdbc;
         this.jdbcTemplate = jdbcTemplate;
+        this.parcelles = parcelles;
     }
 
     /** Stored groupe by id_dossier for those of {@code ids} that exist, in one query. */
@@ -101,12 +106,20 @@ public class DossierRepository {
     }
 
     public List<DossierView> findWithin(double lat, double lng, int radiusMetres) {
-        return jdbc.sql(WITHIN)
+        List<DossierView> found = jdbc.sql(WITHIN)
                 .param("lat", lat)
                 .param("lng", lng)
                 .param("radius", radiusMetres)
                 .query(DossierRepository::mapView)
                 .list();
+        return withParcelles(found);
+    }
+
+    /** {@code views} with their {@code parcelles} filled in (one query for the whole list). */
+    public List<DossierView> withParcelles(List<DossierView> views) {
+        Map<String, List<ParcelleView>> byDossier =
+                parcelles.findByDossiers(views.stream().map(DossierView::idDossier).distinct().toList());
+        return views.stream().map(v -> v.withParcelles(byDossier.getOrDefault(v.idDossier(), List.of()))).toList();
     }
 
     /** Maps the columns selected by {@link #WITHIN} (also reused by the subscription events query). */
@@ -124,6 +137,8 @@ public class DossierRepository {
                 rs.getString("lien_sad"),
                 rs.getDouble("lat"),
                 rs.getDouble("lng"),
-                rs.getDouble("distance_m"));
+                rs.getDouble("distance_m"),
+                List.of(),
+                DossierView.REGISTRE_FONCIER_URL);
     }
 }

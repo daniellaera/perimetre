@@ -28,4 +28,8 @@ public record SubscriptionEventView(
         OffsetDateTime occurredAt,
         List<UUID> subscriptionIds,
         @JsonUnwrapped DossierView dossier) {
+
+    SubscriptionEventView withDossier(DossierView dossier) {
+        return new SubscriptionEventView(eventId, kind, oldGroupe, newGroupe, occurredAt, subscriptionIds, dossier);
+    }
 }

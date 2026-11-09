@@ -15,6 +15,7 @@ import org.springframework.stereotype.Repository;
 import ch.perimetre.dossier.DossierRepository;
 import ch.perimetre.dossier.Groupe;
 import ch.perimetre.event.EventKind;
+import ch.perimetre.parcelle.ParcelleRepository;
 
 @Repository
 public class SubscriptionRepository {
@@ -104,9 +105,11 @@ public class SubscriptionRepository {
             """;
 
     private final JdbcClient jdbc;
+    private final ParcelleRepository parcelles;
 
-    SubscriptionRepository(JdbcClient jdbc) {
+    SubscriptionRepository(JdbcClient jdbc, ParcelleRepository parcelles) {
         this.jdbc = jdbc;
+        this.parcelles = parcelles;
     }
 
     /** {@code id} null lets the database pick one. */
@@ -189,16 +192,25 @@ public class SubscriptionRepository {
 
     /** Events in the subscription's radius and categories, newest first. */
     List<SubscriptionEventView> events(UUID id, int limit) {
-        return jdbc.sql(EVENTS).param("id", id).param("limit", limit).query(SubscriptionRepository::mapEvent).list();
+        return withParcelles(
+                jdbc.sql(EVENTS).param("id", id).param("limit", limit).query(SubscriptionRepository::mapEvent).list());
     }
 
     /** Events matching any subscription of the device, once each, newest first. */
     List<SubscriptionEventView> deviceEvents(UUID deviceId, int limit) {
-        return jdbc.sql(DEVICE_EVENTS)
+        return withParcelles(jdbc.sql(DEVICE_EVENTS)
                 .param("deviceId", deviceId)
                 .param("limit", limit)
                 .query(SubscriptionRepository::mapEvent)
-                .list();
+                .list());
+    }
+
+    /** The events with their dossier's {@code parcelles} filled in (one query for the whole list). */
+    private List<SubscriptionEventView> withParcelles(List<SubscriptionEventView> events) {
+        var byDossier = parcelles.findByDossiers(events.stream().map(e -> e.dossier().idDossier()).distinct().toList());
+        return events.stream()
+                .map(e -> e.withDossier(e.dossier().withParcelles(byDossier.getOrDefault(e.dossier().idDossier(), List.of()))))
+                .toList();
     }
 
     private static JdbcClient.StatementSpec bind(JdbcClient.StatementSpec spec, SubscriptionInput input) {

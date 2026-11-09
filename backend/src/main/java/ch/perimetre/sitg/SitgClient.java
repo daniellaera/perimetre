@@ -1,6 +1,5 @@
 package ch.perimetre.sitg;
 
-import java.io.IOException;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.time.Instant;
@@ -14,9 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
 
 @Component
 class SitgClient {
@@ -29,8 +26,7 @@ class SitgClient {
     private static final Duration TIMEOUT = Duration.ofSeconds(60);
     // Per page: an I/O error is retried up to this many attempts, an HTTP 5xx once (SITG answers bad
     // queries with a 500 maintenance page, which retrying further would not fix).
-    static final int MAX_ATTEMPTS = 3;
-    private static final Duration FIRST_BACKOFF = Duration.ofSeconds(2);
+    static final int MAX_ATTEMPTS = ArcgisRetry.MAX_ATTEMPTS;
     private static final DateTimeFormatter CURSOR_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneOffset.UTC);
 
@@ -39,7 +35,7 @@ class SitgClient {
     private final Consumer<Duration> sleeper;
 
     SitgClient() {
-        this(QUERY_URL, TIMEOUT, SitgClient::sleep);
+        this(QUERY_URL, TIMEOUT, ArcgisRetry::sleep);
     }
 
     /** For tests: another URL, a short timeout, and a sleeper that records the backoff instead of waiting. */
@@ -70,49 +66,9 @@ class SitgClient {
         }
     }
 
-    /**
-     * One page, retried with backoff (2 s, then 4 s): up to {@link #MAX_ATTEMPTS} attempts on an I/O error
-     * (connection reset, timeout, truncated body), one retry on an HTTP 5xx. ArcGIS error bodies are not
-     * retried.
-     */
+    /** One page, retried per {@link ArcgisRetry} (I/O errors up to 3 attempts, an HTTP 5xx once). */
     private SitgPage fetchPage(String where, int offset) {
-        boolean serverErrorRetried = false;
-        for (int attempt = 1; ; attempt++) {
-            try {
-                return requestPage(where, offset);
-            } catch (HttpServerErrorException e) {
-                if (serverErrorRetried || attempt == MAX_ATTEMPTS) {
-                    throw e;
-                }
-                serverErrorRetried = true;
-                log.warn("SITG returned {} at offset {} (attempt {}), retrying", e.getStatusCode(), offset, attempt);
-            } catch (RestClientException e) {
-                if (!isIoError(e) || attempt == MAX_ATTEMPTS) {
-                    throw e;
-                }
-                log.warn("SITG I/O error at offset {} (attempt {}), retrying: {}", offset, attempt, e.toString());
-            }
-            sleeper.accept(FIRST_BACKOFF.multipliedBy(1L << (attempt - 1)));
-        }
-    }
-
-    // ResourceAccessException (no response: reset, connect/read timeout) or a body cut off mid-read.
-    private static boolean isIoError(Throwable e) {
-        for (Throwable t = e; t != null; t = t.getCause()) {
-            if (t instanceof IOException) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static void sleep(Duration duration) {
-        try {
-            Thread.sleep(duration);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("interrupted while waiting to retry SITG", e);
-        }
+        return ArcgisRetry.call("SITG", offset, sleeper, () -> requestPage(where, offset));
     }
 
     private SitgPage requestPage(String where, int offset) {

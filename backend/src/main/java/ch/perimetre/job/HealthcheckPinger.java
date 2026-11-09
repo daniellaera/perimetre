@@ -23,6 +23,7 @@ public class HealthcheckPinger {
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
     private final String url;
+    private final String envName;
     private final RestClient client;
 
     @Autowired
@@ -30,12 +31,22 @@ public class HealthcheckPinger {
         this(url, RestClient.builder().requestFactory(timeouts()));
     }
 
+    /** A pinger for another check (e.g. the parcel import's), named by the env var its URL comes from. */
+    public static HealthcheckPinger forUrl(String url, String envName) {
+        return new HealthcheckPinger(url, RestClient.builder().requestFactory(timeouts()), envName);
+    }
+
     HealthcheckPinger(String url, RestClient.Builder builder) {
+        this(url, builder, "HEALTHCHECK_PING_URL");
+    }
+
+    private HealthcheckPinger(String url, RestClient.Builder builder, String envName) {
+        this.envName = envName;
         String trimmed = url == null ? "" : url.trim();
         this.url = trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
         this.client = builder.build();
-        log.info(this.url.isEmpty() ? "HEALTHCHECK_PING_URL not set: no dead-man's-switch pings"
-                : "Scheduled imports ping HEALTHCHECK_PING_URL");
+        log.info(this.url.isEmpty() ? "{} not set: no dead-man's-switch pings"
+                : "Scheduled imports ping {}", envName);
     }
 
     public void start() {

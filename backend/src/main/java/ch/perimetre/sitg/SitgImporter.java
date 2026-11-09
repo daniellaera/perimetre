@@ -21,6 +21,7 @@ import ch.perimetre.dossier.DossierRepository;
 import ch.perimetre.dossier.Groupe;
 import ch.perimetre.event.EventRepository;
 import ch.perimetre.event.NewEvent;
+import ch.perimetre.parcelle.DossierLinker;
 
 @Service
 public class SitgImporter {
@@ -39,9 +40,11 @@ public class SitgImporter {
     private final EventRepository events;
     private final JdbcClient jdbc;
     private final TransactionTemplate tx;
+    private final DossierLinker linker;
 
     SitgImporter(SitgClient client, DossierRepository dossiers, EventRepository events, JdbcClient jdbc,
-            TransactionTemplate tx) {
+            TransactionTemplate tx, DossierLinker linker) {
+        this.linker = linker;
         this.client = client;
         this.dossiers = dossiers;
         this.events = events;
@@ -91,6 +94,7 @@ public class SitgImporter {
                 return new ImportResult(mode, features.size(), rows.size() - existing.size(), existing.size(),
                         eventIds, maxDateMaj(rows), elapsedMs(start));
             });
+            linkParcels(rows);
             log.info("SITG import done: mode={} fetched={} inserted={} updated={} events={}{} durationMs={}",
                     mode, result.fetched(), result.inserted(), result.updated(), result.eventIds().size(),
                     state.bootstrapped() ? "" : " (bootstrap run, events suppressed)", result.durationMs());
@@ -98,6 +102,19 @@ public class SitgImporter {
         } catch (RuntimeException e) {
             log.error("SITG {} import failed after {} ms; cursor left at {}", mode, elapsedMs(start), state.lastRun(), e);
             throw e;
+        }
+    }
+
+    /**
+     * Links the imported dossiers to their parcels, after the import's own transaction: a failure here must
+     * not undo the import or its notifications. The next parcel import links the dossiers left without a
+     * link (ParcelleRepository.relinkAffectedBy).
+     */
+    private void linkParcels(List<Dossier> rows) {
+        try {
+            linker.link(rows.stream().map(Dossier::idDossier).toList());
+        } catch (RuntimeException e) {
+            log.warn("Linking {} dossiers to their parcels failed; the next parcel import repairs it", rows.size(), e);
         }
     }
 

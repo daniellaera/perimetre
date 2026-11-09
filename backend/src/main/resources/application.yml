@@ -30,6 +30,12 @@ perimetre:
     incremental-cron: ${IMPORT_INCREMENTAL_CRON:0 15 10 * * *}
     # The weekly full refresh, after the incremental of the same morning.
     full-cron: ${IMPORT_FULL_CRON:0 45 10 * * SUN}
+  parcelle:
+    # Cadastral parcels (SITG CAD_PARCELLE_MENSU), after the dossier imports of the same morning. The daily
+    # incremental reads parcels mutated since the last run (- 3 days); the weekly full also deletes vanished
+    # parcels and recomputes every dossier link. Optional own dead-man's switch: PARCELLE_HEALTHCHECK_PING_URL.
+    incremental-cron: ${PARCELLE_INCREMENTAL_CRON:0 30 10 * * *}
+    full-cron: ${PARCELLE_FULL_CRON:0 15 11 * * SUN}
   subscriptions:
     # Technical safety cap per device (app installation); POST /devices/{id}/subscriptions answers 409 above it.
     max-per-device: ${SUBSCRIPTIONS_MAX_PER_DEVICE:25}
