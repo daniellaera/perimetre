@@ -30,6 +30,9 @@ Merged into main (MR !13, `c0f0314`) and deployed to production on 2026-11-09 (s
 - No hard dependency on ge.ch pages: we only expose links. `lien_rf` = SITG's published extrait foncier link;
   `lien_registre_foncier` = `https://www.ge.ch/consulter-registre-foncier`.
 
+## Site: privacy page (2026-11-09)
+- `privacy.html` (only language: fr) gains a "Registre foncier" item: the button opens the State of Geneva's extract in the browser; ge.ch may show registry data incl. the owner's name under its own terms; we collect/store/display none of it and send nothing personal (the link carries parcel ids only). Parcel info added to the data-source item; date 9 novembre 2026. `index.html` footer mentions parcel data. Deployed with `deploy/ship.sh --sync` (backend untouched); `/` and `/privacy` return 200 with the new text.
+
 ## Next
 1. Review/merge the branch (MR on GitLab), then deploy with `deploy/ship.sh`. Prod runs V8: V9 is additive and
    small. The first scheduled parcel run (10:30 next morning) is the bootstrap: a full import (~30 s) that links
