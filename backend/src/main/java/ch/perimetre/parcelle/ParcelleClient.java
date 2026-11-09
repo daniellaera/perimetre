@@ -28,8 +28,10 @@ class ParcelleClient {
             "https://vector.sitg.ge.ch/arcgis/rest/services/CAD_PARCELLE_MENSU/FeatureServer/0/query";
     static final int PAGE_SIZE = 1000;
     private static final Duration TIMEOUT = Duration.ofSeconds(60);
-    // Only what the app needs; owner-related columns (TYPE_PROPRI, PROPRI_PUBLIQUE) are never requested.
-    private static final String OUT_FIELDS = "EGRID,COMMUNE,NO_COMM,NO_PARCELLE,IDEDDP,SURFACE,DATEDT,LIEN_WWW";
+    // Only what the app needs. TYPE_PROPRI is an 8-value category (privé, DP communal...), not a name.
+    // PROPRI_PUBLIQUE (names the public owner) and every other owner-related column are never requested.
+    private static final String OUT_FIELDS =
+            "EGRID,COMMUNE,NO_COMM,NO_PARCELLE,IDEDDP,SURFACE,DATEDT,LIEN_WWW,TYPE_PROPRI,PLAN_RF";
     // 7 decimals of a degree = ~1 cm: far below the cadastre's accuracy, and a third less data.
     private static final int GEOMETRY_PRECISION = 7;
     private static final DateTimeFormatter CURSOR_FORMAT =

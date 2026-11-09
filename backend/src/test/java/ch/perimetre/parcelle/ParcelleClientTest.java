@@ -83,9 +83,10 @@ class ParcelleClientTest {
         String q = queries.get(0);
         assertThat(q).contains("where=VALIDITE = 'en vigueur'").doesNotContain("DATEDT >=");
         assertThat(q).contains("outSR=4326", "f=geojson", "orderByFields=OBJECTID ASC");
-        // The owner-related columns of the layer are never requested.
-        assertThat(q).doesNotContain("PROPRI").doesNotContain("PROPRIETAIRE");
-        assertThat(q).contains("outFields=EGRID,COMMUNE,NO_COMM,NO_PARCELLE,IDEDDP,SURFACE,DATEDT,LIEN_WWW");
+        // TYPE_PROPRI is only an 8-value category; PROPRI_PUBLIQUE (names the public owner) is never requested.
+        assertThat(q).doesNotContain("PROPRI_PUBLIQUE").doesNotContain("PROPRIETAIRE").doesNotContain("CODE_PROPRI");
+        assertThat(q).contains("outFields=EGRID,COMMUNE,NO_COMM,NO_PARCELLE,IDEDDP,SURFACE,DATEDT,LIEN_WWW,"
+                + "TYPE_PROPRI,PLAN_RF");
     }
 
     @Test

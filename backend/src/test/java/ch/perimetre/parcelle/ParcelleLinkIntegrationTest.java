@@ -165,9 +165,11 @@ class ParcelleLinkIntegrationTest {
         List<ParcelleView> served = parcelles.findByDossiers(List.of("TEST-LINK 13/1")).get("TEST-LINK 13/1");
 
         assertThat(served).extracting(ParcelleView::numero).containsExactly(1, 2);
-        assertThat(served.get(0)).isEqualTo(new ParcelleView("CHTEST-1", "Testville", 1, 100, "https://example.test/1"));
+        assertThat(served.get(0)).isEqualTo(new ParcelleView("CHTEST-1", "Testville", 1, 100, "https://example.test/1",
+                null, null, null, List.of(), 0, List.of()));
         assertThat(ParcelleView.class.getRecordComponents()).extracting(c -> c.getName())
-                .containsExactly("egrid", "commune", "numero", "surfaceM2", "lienRf");
+                .containsExactly("egrid", "commune", "numero", "surfaceM2", "lienRf", "type", "planRf", "lieuDit",
+                        "batiments", "nbBatiments", "restrictions");
     }
 
     private List<String> linked(String idDossier) {

@@ -1,3 +1,59 @@
+# Release 1.1.0: open parcel data shown natively (branch work, NOT deployed)
+
+Goal: show every OPEN datum about a parcel in the app instead of sending users to ge.ch's extract page. Hard rules:
+no owner names or non-open registry data, never touch ge.ch/terextraitfoncier from code, no webview, old backend must
+keep working, anything with unclear terms is not imported. Conventions: CLAUDE.md "Parcel context".
+
+## Phase 1, backend: done (2026-11-09)
+- **Discovery** (SITG ArcGIS only; every layer's SITG catalogue page says "A - Accès libre"; opendata.swiss confirmed
+  `terms_open` for the parcel layer, the portal then throttled me, see "Anomalies"): imported `TYPE_PROPRI` (category) and
+  `PLAN_RF` of `CAD_PARCELLE_MENSU`, buildings `CAD_BATIMENT_HORSOL`, addresses `CAD_ADRESSE`, zones
+  `RDPPF_ZONES_PRIM` + `RDPPF_ZONES_DEV`, local names `CAD_NOMS_LOCAUX`. Table of fields, links and exclusions in CLAUDE.md.
+- V10 migration, `ArcgisLayerClient` (generic, shared `ArcgisRetry`), `LayerImporter` base + 4 importers, `ContexteJob`
+  (crons 10:40 daily buildings / Sunday 11:30 all four, `job_run` rows, optional `CONTEXTE_HEALTHCHECK_PING_URL`),
+  `POST /admin/import/contexte`, 90% shrink guard on every layer, parcel import relinks changed parcels.
+- API: `parcelles[]` gains `type, plan_rf, lieu_dit, nb_batiments, batiments[], restrictions[]` (additive).
+- Tests: 176 backend tests green (0 failures; 1 skipped = the on-demand perf test). New: `ContexteIntegrationTest`,
+  `ArcgisLayerClientTest`, `ContexteMappingTest`; extended `DossierParcellesApiIntegrationTest`, `ParcelleClientTest`.
+
+### Verified (local, ports 8090 / 5433 / 6380)
+- Row counts = source counts: parcels 73,156; buildings 83,088; addresses 54,719; zones 2,479 + 756 = 3,235; local
+  names 2,038. All 73,156 parcels have type and plan; 73,155 a lieu-dit; 73,141 a zone; 46,161 have a building
+  (86,285 links); the 5 unlinked buildings are exactly the 5 with a null `EGRID_LISTE`; 97 links have no measurable
+  footprint (null).
+- Idempotent: second full run of buildings and addresses `changed=0`; a buildings incremental fetched 6, changed 0.
+- Spot-check of 10 parcels against live SITG (type, plan, surface, number of buildings by `EGRID_LISTE`, number of
+  addresses by `EGID`, zones by SITG's own point-in-polygon): 10/10 agree. (The first run disagreed on the zones of 3
+  parcels because the point query in lon/lat is not reliable; repeated in native EPSG:2056 all 3 agree.)
+- Sizes: see CLAUDE.md. DB 129 → 215 MB after `VACUUM FULL` (the rewrite of every parcel row alone took the table to
+  197 MB).
+
+### Decisions
+- `TYPE_PROPRI` imported as the 8-value category (`type`), because it names nobody; `PROPRI_PUBLIQUE` is NOT (it names
+  the public owner). Judgement call: say so if you disagree, it is one column and one field.
+- Building names (`NOMBAT`), underground buildings, `NO_AUTOR`, `CAD_DDP`, `CAD_PPE`, `CAD_NATURE_SOL`: left out (see
+  CLAUDE.md for each reason).
+- Zones: shown when ≥ 1 m² and ≥ 1% of the parcel. Buildings: 30 largest per parcel, real count in `nb_batiments`.
+- Zone and building documents (`LIEN_PLAN`, `LIEN_LOI`, `EXTRAIT_RDPPF_PDF`) are not exposed.
+
+### Needs a decision (not imported)
+- `EXTRAIT_RDPPF_PDF` / `LIEN_PLAN` / `LIEN_LOI`: links to documents on ge.ch hosts. Not checked, not stored.
+- Other open `RDPPF_*` layers (noise `RDPPF_DSOPB`, `RDPPF_DISTANCES_FORET_*`, `RDPPF_CADASTRE_SITES_POLLUES`,
+  `RDPPF_ZONES_PROTECTION_EAUX`, `RDPPF_PLQ`...): licence class not checked per layer; same table would hold them.
+- `PROPRI_PUBLIQUE` (see Decisions).
+
+### To do at deploy time (do not do from here)
+1. MR, green pipeline, `deploy/ship.sh <short-sha>` (V10 is additive; take a backup first as usual).
+2. The first parcel run is FULL (V10 resets its bootstrap flag): or run `POST /admin/import/parcelles?mode=full`, then
+   `POST /admin/import/contexte?source=all&mode=full` (~6 min).
+3. `VACUUM FULL parcelle;` once (locks the table for seconds), see CLAUDE.md.
+4. Optional healthchecks.io check `40 10 * * *` and `CONTEXTE_HEALTHCHECK_PING_URL`.
+
+### Anomalies
+- opendata.swiss' API answered 403 after a few requests; I did not work around it (the licence check of the other layers
+  uses SITG's own catalogue pages, which state the same access class).
+- One SITG parcel has a self-intersecting outline (`ST_Intersection` threw): handled with `ST_MakeValid` and tested.
+
 # Progress: land-registry parcels (backend)
 
 Merged into main (MR !13, `c0f0314`) and deployed to production on 2026-11-09 (see "Production" below). Conventions and rationale: CLAUDE.md, section "Parcels".

@@ -66,7 +66,9 @@ class DossierParcellesApiIntegrationTest {
 
         List<Map<String, Object>> parcelles = JsonPath.read(json, "$[?(@.id_dossier=='TEST-API 1/1')].parcelles[*]");
         assertThat(parcelles).hasSize(2);
-        assertThat(parcelles.get(0)).containsOnlyKeys("egrid", "commune", "numero", "surface_m2", "lien_rf")
+        // The first five keys are the original contract; the others are additive and empty here.
+        assertThat(parcelles.get(0)).containsOnlyKeys("egrid", "commune", "numero", "surface_m2", "lien_rf",
+                        "type", "plan_rf", "lieu_dit", "batiments", "nb_batiments", "restrictions")
                 .containsEntry("egrid", "CHTEST-1").containsEntry("commune", "Testville")
                 .containsEntry("numero", 1).containsEntry("surface_m2", 100)
                 .containsEntry("lien_rf", "https://example.test/1");
@@ -108,6 +110,56 @@ class DossierParcellesApiIntegrationTest {
                         WHERE table_name IN ('parcelle', 'dossier_parcelle')""")
                 .query(String.class).list())
                 .noneMatch(c -> c.contains("propri") || c.contains("owner") || c.contains("nom"));
+        // The context tables hold buildings, addresses and zones: no column names a person or an owner either.
+        assertThat(jdbc.sql("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_name IN ('batiment', 'adresse', 'parcelle_batiment', 'zone_affectation',
+                                             'parcelle_zone', 'lieu_dit')""")
+                .query(String.class).list())
+                .noneMatch(c -> c.contains("propri") || c.contains("owner") || c.contains("nombat")
+                        || c.equals("nom_prenom") || c.contains("proprio"));
+    }
+
+    @Test
+    void parcelsCarryTheirOpenContext() throws Exception {
+        jdbc.sql("UPDATE parcelle SET type_parcelle = 'privé', plan_rf = '36', lieu_dit = 'Au Lac' "
+                + "WHERE id_parcelle = 'TEST:A'").update();
+        jdbc.sql("""
+                INSERT INTO batiment (egid, no_batiment, destination, surface_m2, annee_construction, egrid_liste, geom)
+                VALUES (900001, 'A12', 'Habitation un logement', 80, 1990, '{CHTEST-1}',
+                        ST_Multi(ST_MakeEnvelope(6.20002, 46.30002, 6.20006, 46.30004, 4326)))""").update();
+        jdbc.sql("INSERT INTO adresse (idpadr, egid, adresse, postale) VALUES ('T1', 900001, 'Chemin du Test 3', true)")
+                .update();
+        jdbc.sql("INSERT INTO parcelle_batiment (id_parcelle, egid, surface_sur_parcelle_m2) VALUES "
+                + "('TEST:A', 900001, 78)").update();
+        jdbc.sql("""
+                INSERT INTO zone_affectation (id, source, code, nom, description, statut, geom)
+                VALUES (-1, 'ZONE', '5', 'Zone 5', 'Villas', 'En vigueur',
+                        ST_Multi(ST_MakeEnvelope(6.1990, 46.2990, 6.2010, 46.3010, 4326)))""").update();
+        jdbc.sql("INSERT INTO parcelle_zone (id_parcelle, id_zone, surface_m2, part_pct) VALUES ('TEST:A', -1, 100, 100)")
+                .update();
+
+        List<Map<String, Object>> found = JsonPath.read(dossiersAround(),
+                "$[?(@.id_dossier=='TEST-API 1/1')].parcelles[?(@.numero==1)]");
+
+        assertThat(found).hasSize(1);
+        Map<String, Object> parcel = found.get(0);
+        assertThat(parcel).containsEntry("type", "privé").containsEntry("plan_rf", "36")
+                .containsEntry("lieu_dit", "Au Lac").containsEntry("nb_batiments", 1);
+        assertThat(JsonPath.<List<Map<String, Object>>>read(parcel, "$.batiments")).singleElement().satisfies(b -> {
+            assertThat(b).containsEntry("numero", "A12").containsEntry("destination", "Habitation un logement")
+                    .containsEntry("surface_m2", 80).containsEntry("surface_sur_parcelle_m2", 78)
+                    .containsEntry("annee_construction", 1990).containsEntry("egid", 900001);
+            assertThat(JsonPath.<List<String>>read(b, "$.adresses")).containsExactly("Chemin du Test 3");
+        });
+        assertThat(JsonPath.<List<Map<String, Object>>>read(parcel, "$.restrictions")).singleElement().satisfies(z ->
+                assertThat(z).containsEntry("type", "ZONE").containsEntry("code", "5").containsEntry("nom", "Zone 5")
+                        .containsEntry("part_pct", 100).containsEntry("statut", "En vigueur"));
+        // The other parcel of the dossier has none of it, as empty lists, not nulls.
+        List<Map<String, Object>> other = JsonPath.read(dossiersAround(),
+                "$[?(@.id_dossier=='TEST-API 1/1')].parcelles[?(@.numero==2)]");
+        assertThat(other.get(0)).containsEntry("nb_batiments", 0).containsEntry("batiments", List.of())
+                .containsEntry("restrictions", List.of()).containsEntry("type", null);
     }
 
     @Test

@@ -41,12 +41,15 @@ public class ParcelleImporter {
 
     private final ParcelleClient client;
     private final ParcelleRepository parcelles;
+    private final ContexteRepository contexte;
     private final JdbcClient jdbc;
     private final TransactionTemplate tx;
 
-    ParcelleImporter(ParcelleClient client, ParcelleRepository parcelles, JdbcClient jdbc, TransactionTemplate tx) {
+    ParcelleImporter(ParcelleClient client, ParcelleRepository parcelles, ContexteRepository contexte,
+            JdbcClient jdbc, TransactionTemplate tx) {
         this.client = client;
         this.parcelles = parcelles;
+        this.contexte = contexte;
         this.jdbc = jdbc;
         this.tx = tx;
     }
@@ -121,6 +124,8 @@ public class ParcelleImporter {
                 } else {
                     relinked = changed.isEmpty() ? 0 : parcelles.relinkAffectedBy(changed);
                 }
+                // Buildings, zones and the local name follow the parcels that were inserted or modified.
+                contexte.relinkParcels(changed);
                 jdbc.sql("UPDATE sync_state SET last_run = now(), bootstrapped = true WHERE source = ?")
                         .param(SOURCE)
                         .update();
@@ -159,12 +164,16 @@ public class ParcelleImporter {
             String id = a.ideddp() != null && !a.ideddp().isBlank() ? a.ideddp() : a.noComm() + ":" + a.noParcelle();
             rows.add(new ParcelleRow(id, a.egrid(), a.commune(), a.noComm(), a.noParcelle(), a.surface(),
                     a.datedt() == null ? null : LocalDate.ofInstant(Instant.ofEpochMilli(a.datedt()), ZoneOffset.UTC),
-                    a.lienWww(), f.geometry().toString()));
+                    a.lienWww(), blankToNull(a.typePropri()), blankToNull(a.planRf()), f.geometry().toString()));
         }
         if (skipped > 0) {
             log.warn("Parcel import skipped {} features missing commune, number or geometry", skipped);
         }
         return rows;
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.strip();
     }
 
     private static long elapsedMs(long startNanos) {

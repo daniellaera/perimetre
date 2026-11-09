@@ -24,8 +24,9 @@ public class ParcelleRepository {
 
     // Rewrites only a row that really differs (so the returned update count says "changed").
     private static final String UPSERT = """
-            INSERT INTO parcelle (id_parcelle, egrid, commune, no_comm, no_parcelle, surface_m2, date_mut, lien_rf, geom)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(?), 4326)))
+            INSERT INTO parcelle (id_parcelle, egrid, commune, no_comm, no_parcelle, surface_m2, date_mut, lien_rf,
+                                  type_parcelle, plan_rf, geom)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(?), 4326)))
             ON CONFLICT (id_parcelle) DO UPDATE SET
                 egrid       = EXCLUDED.egrid,
                 commune     = EXCLUDED.commune,
@@ -34,12 +35,15 @@ public class ParcelleRepository {
                 surface_m2  = EXCLUDED.surface_m2,
                 date_mut    = EXCLUDED.date_mut,
                 lien_rf     = EXCLUDED.lien_rf,
+                type_parcelle = EXCLUDED.type_parcelle,
+                plan_rf     = EXCLUDED.plan_rf,
                 geom        = EXCLUDED.geom,
                 updated_at  = now()
             WHERE (parcelle.egrid, parcelle.commune, parcelle.no_comm, parcelle.no_parcelle, parcelle.surface_m2,
-                   parcelle.date_mut, parcelle.lien_rf)
+                   parcelle.date_mut, parcelle.lien_rf, parcelle.type_parcelle, parcelle.plan_rf)
                   IS DISTINCT FROM (EXCLUDED.egrid, EXCLUDED.commune, EXCLUDED.no_comm, EXCLUDED.no_parcelle,
-                                    EXCLUDED.surface_m2, EXCLUDED.date_mut, EXCLUDED.lien_rf)
+                                    EXCLUDED.surface_m2, EXCLUDED.date_mut, EXCLUDED.lien_rf,
+                                    EXCLUDED.type_parcelle, EXCLUDED.plan_rf)
                OR NOT ST_OrderingEquals(parcelle.geom, EXCLUDED.geom)
             """;
 
@@ -54,10 +58,12 @@ public class ParcelleRepository {
 
     private final JdbcClient jdbc;
     private final JdbcTemplate jdbcTemplate;
+    private final ContexteRepository contexte;
 
-    ParcelleRepository(JdbcClient jdbc, JdbcTemplate jdbcTemplate) {
+    ParcelleRepository(JdbcClient jdbc, JdbcTemplate jdbcTemplate, ContexteRepository contexte) {
         this.jdbc = jdbc;
         this.jdbcTemplate = jdbcTemplate;
+        this.contexte = contexte;
     }
 
     /** Upserts {@code rows}; returns the ids of those inserted or really changed (unchanged rows are not touched). */
@@ -71,7 +77,9 @@ public class ParcelleRepository {
             ps.setObject(6, r.surfaceM2());
             ps.setObject(7, r.dateMut());
             ps.setString(8, r.lienRf());
-            ps.setString(9, r.geometryJson());
+            ps.setString(9, r.typeParcelle());
+            ps.setString(10, r.planRf());
+            ps.setString(11, r.geometryJson());
         });
         List<String> changed = new ArrayList<>();
         int i = 0;
@@ -150,19 +158,37 @@ public class ParcelleRepository {
         if (dossierIds.isEmpty()) {
             return byDossier;
         }
+        record Base(String idDossier, String idParcelle, String egrid, String commune, int numero, Integer surface,
+                String lienRf, String type, String planRf, String lieuDit) {
+        }
+        List<Base> bases = new ArrayList<>();
         jdbc.sql("""
-                SELECT dp.id_dossier, p.egrid, p.commune, p.no_parcelle, p.surface_m2, p.lien_rf
+                SELECT dp.id_dossier, p.id_parcelle, p.egrid, p.commune, p.no_parcelle, p.surface_m2, p.lien_rf,
+                       p.type_parcelle, p.plan_rf, p.lieu_dit
                 FROM dossier_parcelle dp JOIN parcelle p USING (id_parcelle)
                 WHERE dp.id_dossier = ANY(CAST(:ids AS text[]))
                 ORDER BY dp.id_dossier, p.no_comm, p.no_parcelle
                 """)
                 .param("ids", dossierIds.toArray(String[]::new))
                 .query(rs -> {
-                    byDossier.computeIfAbsent(rs.getString("id_dossier"), k -> new ArrayList<>())
-                            .add(new ParcelleView(rs.getString("egrid"), rs.getString("commune"),
-                                    rs.getInt("no_parcelle"), rs.getObject("surface_m2", Integer.class),
-                                    rs.getString("lien_rf")));
+                    bases.add(new Base(rs.getString("id_dossier"), rs.getString("id_parcelle"),
+                            rs.getString("egrid"), rs.getString("commune"), rs.getInt("no_parcelle"),
+                            rs.getObject("surface_m2", Integer.class), rs.getString("lien_rf"),
+                            rs.getString("type_parcelle"), rs.getString("plan_rf"), rs.getString("lieu_dit")));
                 });
+        Map<String, ContexteRepository.Details> details = contexte.detailsOf(
+                bases.stream().map(Base::idParcelle).distinct().toList());
+        for (Base b : bases) {
+            ContexteRepository.Details d = details.get(b.idParcelle());
+            byDossier.computeIfAbsent(b.idDossier(), k -> new ArrayList<>()).add(new ParcelleView(
+                    b.egrid(), b.commune(), b.numero(), b.surface(), b.lienRf(), b.type(), b.planRf(), b.lieuDit(),
+                    d.batiments().stream().map(x -> new ParcelleView.BatimentView(x.egid(), x.numero(),
+                            x.destination(), x.surfaceM2(), x.surfaceSurParcelleM2(), x.anneeConstruction(),
+                            x.adresses())).toList(),
+                    d.nbBatiments(),
+                    d.restrictions().stream().map(x -> new ParcelleView.RestrictionView(x.type(), x.code(), x.nom(),
+                            x.description(), x.statut(), x.surfaceM2(), x.partPct())).toList()));
+        }
         return byDossier;
     }
 }

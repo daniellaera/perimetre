@@ -9,7 +9,8 @@ import tools.jackson.databind.JsonNode;
 
 /**
  * One page of the CAD_PARCELLE_MENSU ArcGIS query in {@code f=geojson} format. Only open attributes are
- * read (the layer's owner-related columns TYPE_PROPRI / PROPRI_PUBLIQUE are not even requested). The
+ * read (PROPRI_PUBLIQUE and the other owner-related columns are not even requested; TYPE_PROPRI is only the
+ * 8-value category of the parcel). The
  * geometry stays a raw JSON tree: PostGIS parses it ({@code ST_GeomFromGeoJSON}).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -40,6 +41,8 @@ record ParcellePage(List<Feature> features, PageProperties properties, Error err
             @JsonProperty("IDEDDP") String ideddp,
             @JsonProperty("SURFACE") Integer surface,
             @JsonProperty("DATEDT") Long datedt,
-            @JsonProperty("LIEN_WWW") String lienWww) {
+            @JsonProperty("LIEN_WWW") String lienWww,
+            @JsonProperty("TYPE_PROPRI") String typePropri,
+            @JsonProperty("PLAN_RF") String planRf) {
     }
 }

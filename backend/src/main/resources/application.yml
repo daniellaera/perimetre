@@ -36,6 +36,11 @@ perimetre:
     # parcels and recomputes every dossier link. Optional own dead-man's switch: PARCELLE_HEALTHCHECK_PING_URL.
     incremental-cron: ${PARCELLE_INCREMENTAL_CRON:0 30 10 * * *}
     full-cron: ${PARCELLE_FULL_CRON:0 15 11 * * SUN}
+  contexte:
+    # Open layers around the parcels (buildings, addresses, zones, local names), after the parcel import.
+    # Daily: the buildings (incremental); Sundays: all four. Optional dead-man's switch: CONTEXTE_HEALTHCHECK_PING_URL.
+    incremental-cron: ${CONTEXTE_INCREMENTAL_CRON:0 40 10 * * *}
+    full-cron: ${CONTEXTE_FULL_CRON:0 30 11 * * SUN}
   subscriptions:
     # Technical safety cap per device (app installation); POST /devices/{id}/subscriptions answers 409 above it.
     max-per-device: ${SUBSCRIPTIONS_MAX_PER_DEVICE:25}

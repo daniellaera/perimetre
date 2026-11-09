@@ -140,15 +140,19 @@ with `outFields=*`, `outSR=4326`, `f=geojson`, `orderByFields=objectid ASC`,
 
 Land-registry context for each dossier, from **open data only**. **Hard rule: never store, scrape or display
 owner names or any non-open registry data; never scrape the RF portal.** The source's `TYPE_PROPRI` and
-`PROPRI_PUBLIQUE` columns are deliberately not requested (`ParcelleClient.OUT_FIELDS`), and a test checks the
-tables and responses for owner-like names.
+`PROPRI_PUBLIQUE` columns were deliberately not requested at first. Since V10, `TYPE_PROPRI` is imported **as a
+category only** (8 values: privé, DP communal, dépendance, DP cantonal, chemin vicinal, droits spéciaux, privé+dépendance,
+DP communal (hors indice); it names nobody). `PROPRI_PUBLIQUE` (the public owner: SIG, Commune, CFF, Etat de Genève...) and
+`CODE_PROPRI_PUBLIQUE_RF` are never requested (`ParcelleClient.OUT_FIELDS`). Tests check the requested fields, the
+tables and the responses for owner-like names.
 
 - **Source:** SITG layer **`CAD_PARCELLE_MENSU`** ("parcelle en vigueur", official survey parcels):
   `https://vector.sitg.ge.ch/arcgis/rest/services/CAD_PARCELLE_MENSU/FeatureServer/0/query`, same ArcGIS REST
   conventions as the dossiers (`outSR=4326`, `f=geojson`, `orderByFields=OBJECTID ASC`, `resultOffset` paging; the
   retry policy is shared, `ArcgisRetry`). 73,156 parcels (2026-11), all `VALIDITE = 'en vigueur'`, 48 communes.
   **`CAD_PLANRF` is NOT the parcel layer** (it is the 1,632 RF *plan sheets*, no parcel numbers). Fields kept: `IDEDDP` (`<no_comm>:<no_parcelle>`, business key) · `EGRID` · `COMMUNE`
-  · `NO_COMM` · `NO_PARCELLE` · `SURFACE` (m²) · `DATEDT` (last mutation) · `LIEN_WWW` → `lien_rf` · geometry.
+  · `NO_COMM` · `NO_PARCELLE` · `SURFACE` (m²) · `DATEDT` (last mutation) · `LIEN_WWW` → `lien_rf` · `TYPE_PROPRI` → `type_parcelle` ·
+  `PLAN_RF` → `plan_rf` · geometry.
 - **Size decision (2026-11-09): keep every parcel with full geometry, no simplification, no subset.** The
   table is 70 MB (50 MB heap + 6 MB GIST index + TOAST; whole local DB 129 MB), a fraction of the VPS's 60 GB,
   and a subset ("parcels intersecting a dossier") would need a lazy lookup for every new dossier. Geometry is
@@ -202,7 +206,68 @@ tables and responses for owner-like names.
   - **Production (2026-11-09):** deployed with V9 and bootstrapped by one manual full import: 73,156 parcels (70 MB),
     26,119 links; 16,437 dossiers with one parcel, 4,832 with two, 6 with three, 1 with none. See PROGRESS.md.
 
-## Data model (Flyway V1–V9)
+## Parcel context (`ch.perimetre.parcelle`, V10)
+
+What else is **open** about a parcel, shown natively in the app (the owner and the official extract stay behind the
+"Voir au registre foncier" link). Every source is a SITG ArcGIS layer, access class **A "Accès libre"** (SITG's
+classification at https://sitg.ge.ch/ressources/conditions-utilisation-donnees: private and commercial use allowed,
+**the source must be named**, here "Source : SITG"; checked on each layer's catalogue page on 2026-11-09, and for the
+parcel layer also on opendata.swiss: `terms_open`). Anything whose terms are unclear is **not** imported (PROGRESS.md,
+"needs a decision").
+
+| layer | what | rows (2026-11) | kept |
+|-------|------|----------------|------|
+| `CAD_PARCELLE_MENSU` | parcel category, RF plan number | 73,156 | `TYPE_PROPRI` (category), `PLAN_RF` |
+| `CAD_BATIMENT_HORSOL` | buildings above ground | 83,088 | `EGID` (key), `NO_BATIMENT`, `DESTINATION`, `NOMENCLATURE`, `SURFACE`, `ANNEE_CONSTRUCTION`, `NIVEAUX_HORSOL`, `DATEDT`, `EGRID_LISTE` (the parcels it stands on), geometry |
+| `CAD_ADRESSE` | building addresses | 54,719 | `IDPADR`, `EGID`, `ADRESSE`, `NO_POSTAL`, `NOM_NPA`, `POSTALE` (no geometry) |
+| `RDPPF_ZONES_PRIM` + `RDPPF_ZONES_DEV` | land-use zones (affectation; développement) | 2,479 + 756 | `ABRV_ZONE`, `NOM_ZONE`, `DESC_ZONE`, `COMMUNE`, `STATUT_JUR` (all "En vigueur"), geometry; the legal-document links are not stored |
+| `CAD_NOMS_LOCAUX` | local names (lieux-dits) | 2,038 | `TEXTE`, geometry |
+
+Not imported, on purpose: `NOMBAT` (institution names), `NO_AUTOR` (permit numbers), `PROPRI_PUBLIQUE` (owner),
+`EXTRAIT_RDPPF_PDF` and the zones' `LIEN_*` (links into ge.ch documents; we do not link what we have not checked),
+`CAD_BATIMENT_SOUSOL` (8,146 underground buildings: clutter), `CAD_DDP`, `CAD_PPE`, `CAD_NATURE_SOL`, and the other
+`RDPPF_*` layers (noise, forest distance, polluted sites, water protection...: open, easy to add into `zone_affectation`
+with a new `source`, not needed yet).
+
+- **Link parcel ↔ building:** `parcelle_batiment`, from the building's official `EGRID_LISTE`; the footprint inside
+  each parcel (`surface_sur_parcelle_m2`) is measured on the geometries (geography m², null when it rounds to 0).
+  5 buildings have no `EGRID_LISTE` and no link. Addresses reach a building through its `EGID` at query time.
+- **Link parcel ↔ zone:** `parcelle_zone`, a zone counts when it covers **≥ 1 m² and ≥ 1%** of the parcel (smaller overlaps
+  are edge slivers; a zone that only touches the edge is dropped). `part_pct` = share of the parcel. The parcel
+  outline is made valid first (one SITG parcel is self-intersecting).
+- **Local name:** `parcelle.lieu_dit` = the polygon holding the parcel's inner point (`ST_PointOnSurface`).
+- **Import** (`ContexteJob`, `LayerImporter` base, `ArcgisLayerClient` generic client with the shared `ArcgisRetry`):
+  - buildings: `INCREMENTAL` on `DATEDT >= last_run - 3 days`, `FULL` upserts, deletes what vanished and is **refused
+    below 90%** of the stored rows. A second full run reports `changed=0`.
+  - addresses: always FULL (no date), same guard. Zones and local names: always FULL, replaced whole (small layers, no
+    stable key), same guard. The first run of every layer is FULL.
+  - After a **parcel** import the buildings, zones and local name of the inserted/modified parcels are relinked.
+  - Schedule (`application.yml`, zone Europe/Zurich fixed in the annotation): `perimetre.contexte.incremental-cron` (env
+    `CONTEXTE_INCREMENTAL_CRON`, daily **10:40**: buildings only) and `perimetre.contexte.full-cron` (env
+    `CONTEXTE_FULL_CRON`, Sundays **11:30**: all four, in that order), after the parcel imports.
+  - `job_run` rows: `batiment-incremental|full`, `adresse-full`, `zone-full`, `lieu-dit-full` (`fetched`; `changed` =
+    inserted + modified + removed; zones and names are replaced whole, so `changed` = their row count every week).
+    Optional own healthchecks.io check, env `CONTEXTE_HEALTHCHECK_PING_URL` (schedule `40 10 * * *`; the Sunday run
+    pings it too, `/fail` when any layer fails); unset = no-op.
+  - `POST /admin/import/contexte?source=batiments|adresses|zones|lieux-dits|all&mode=incremental|full` (default all /
+    incremental; only buildings have an incremental mode, the rest runs FULL and the `job_run` row says so); 409 when
+    one is running, 400 for an unknown source or mode.
+  - **First deploy:** V10 marks the parcel source as not bootstrapped, so the next parcel run is a FULL one (fills
+    `type_parcelle` and `plan_rf`). Rewriting every parcel row **bloats the table** (74 MB → 197 MB locally until
+    `VACUUM FULL parcelle`, which locks it for a few seconds): run it once after the first full import, or leave it to
+    autovacuum (space is reused, never returned).
+- **Sizes (local, 2026-11-09, after `VACUUM FULL`):** `parcelle` 74 MB (with the 3 new columns), `batiment` 40 MB,
+  `parcelle_batiment` 11 MB (86,285 links), `parcelle_zone` 10 MB (96,330 links), `adresse` 9 MB, `zone_affectation`
+  6 MB, `lieu_dit` 3 MB; whole database 215 MB (was 129 MB). First load: parcels 31 s, buildings ~5 min (links
+  included), addresses 9 s, zones 33 s, local names 5 s.
+- **API** (additive; the first five fields of a parcel never change): each item of `parcelles[]` also carries
+  `type` (the category), `plan_rf`, `lieu_dit`, `nb_batiments` (real count), `batiments[]` (the 30 largest on the parcel:
+  `egid, numero, destination, surface_m2, surface_sur_parcelle_m2, annee_construction, adresses[]`) and
+  `restrictions[]` (at most 10 zones, largest first: `type` ZONE | ZONE_DEVELOPPEMENT, `code, nom, description,
+  statut, surface_m2, part_pct`; several polygons of one zone are summed). Lists are `[]` when empty, the scalars
+  null. 200 dossiers weigh ~400 KB as JSON (Caddy gzips them), the query stays ~60 ms.
+
+## Data model (Flyway V1–V10)
 
 - `dossier`: one row per SITG dossier (see "SITG import"); `dossier_geog_gist` on `(geom::geography)`.
 - `sync_state(source PK, last_run, bootstrapped)`: one row per source, `SIT_AUTOR_DOSSIER` and (V9)
@@ -210,6 +275,9 @@ tables and responses for owner-like names.
 - `parcelle` (V9, see "Parcels"): `id_parcelle` PK, `egrid`, `commune`, `no_comm`, `no_parcelle`, `surface_m2`,
   `date_mut`, `lien_rf`, `geom geometry(MultiPolygon,4326)` (GIST `parcelle_geom_idx`), `updated_at`.
   `dossier_parcelle(id_dossier → dossier, id_parcelle → parcelle, PK both, ON DELETE CASCADE)`.
+  **V10** adds `parcelle.type_parcelle, plan_rf, lieu_dit` and the tables `batiment`, `parcelle_batiment`, `adresse`,
+  `zone_affectation`, `parcelle_zone`, `lieu_dit` (see "Parcel context"), plus four `sync_state` rows
+  (`CAD_BATIMENT_HORSOL`, `CAD_ADRESSE`, `RDPPF_ZONES`, `CAD_NOMS_LOCAUX`).
 - `device(id UUID PK, push_token, platform ios|android|null, consecutive_failures, created_at,
   updated_at, last_test_push_at)` (V6; V8 added `last_test_push_at`): one app installation.
   `consecutive_failures` counts runs whose push failed with an invalid token (see "Notifications");
@@ -299,6 +367,7 @@ tables and responses for owner-like names.
 - `POST /admin/import/parcelles?mode=incremental|full` (default incremental; the first run is always full):
   parcel import + relink, synchronous, `{jobRunId, mode, fetched, changed, removed, relinked, durationMs}`;
   409 when one is already running, 400 for an unknown mode (see "Parcels").
+- `POST /admin/import/contexte?source=…&mode=…`: buildings, addresses, zones, local names (see "Parcel context").
 - `GET /admin/job-runs?limit=20` (1–200): `job_run` rows newest first (`started_at DESC, id DESC`),
   snake_case, plus `duration_ms`; `status` and `max_date_maj_sitg` tell whether SITG's data was fresh.
 - **`/admin/**` auth** (`ch.perimetre.admin`): a servlet filter on `/admin/*` wants
@@ -583,6 +652,12 @@ Setup (once per Firebase project; Android still needs steps 1 and 3):
   unchanged, no owner-like column or text), `ParcelleClientTest` (local HTTP server: paging, the query sent
   incl. no owner fields, DATEDT cursor, 500 retried), `ParcelleImporterRulesTest` (first run is full, the 10%
   shrink guard, cursor at midnight).
+- Parcel context: `ContexteIntegrationTest` (test parcels in the lake, rolled back: a building on two parcels gets its
+  footprint in each, only the parcels of its official list, unchanged rows not reported, relink of a changed parcel,
+  zone sliver/edge rules, a self-intersecting parcel, the 30-building cap with the real count, empty details),
+  `ArcgisLayerClientTest` (fields sent, no geometry when not wanted, paging, 500 retried, ArcGIS error not retried),
+  `ContexteMappingTest` (row mapping with missing/placeholder values, no name/owner fields requested, mode and 90% rules),
+  and the extended `DossierParcellesApiIntegrationTest` (new fields served, empty lists not nulls, old fields unchanged).
 - `MatchingRadiusIntegrationTest`: a subscription at the maximum radius matches an event 1 m inside it (and
   not one 1 m outside); the DB CHECK has the same bounds as `SubscriptionInput`; the API refuses max + 1.
 - `V6MigrationTest`: creates a throwaway database `perimetre_v6_migration_test` on the same server,
