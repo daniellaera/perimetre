@@ -548,6 +548,16 @@ assets/mapbox-logo.png (+ 2.0x/, 3.0x/)   the Mapbox logo, required on the map
   --target=integration_test/parcelles_test.dart -d <id>` (screenshots via `simctl` in `build/parcel-screenshots/`, it also
   opens and closes the Safari sheet with `closeInAppWebView()`; **delete the Safari screenshots afterwards**: the ge.ch
   extract page shows private individuals' names).
+- **Details sheet navigation** (`showDossierDetails`, `_DetailsHeader` in `widgets.dart`; reached from the Explorer list and map,
+  the "Récent" feed and a tapped push): a modal bottom sheet on the **root navigator** (`useRootNavigator`: on the shell's own
+  navigator it was clipped above the bottom bar), `useSafeArea` and a height cap of 92% (a strip of scrim stays tappable). A pinned
+  header (never scrolls) holds the drag handle, "Détail du dossier" and a **"Fermer"** button (≥ 44 × 48 pt). Leaving: Fermer,
+  swipe down on the header, tap on the scrim, Android's back (the route pops). The home-indicator inset is scroll padding. Build 6
+  (1.1.0) had only the drag handle, under the status bar on a tall sheet: no visible way out. Regression tests:
+  `test/details_navigation_test.dart` (fails on the old sheet) and `integration_test/navigation_test.dart` (real taps in the
+  real app, screenshot per step; run it with `test_driver/navigation_screenshots.dart`, see its header; dev simulators only).
+  The ge.ch page opened by the registry button is Apple's SFSafariViewController: its own close button (top left) and bar are
+  native. **Never screenshot it**: the extract lists owners' names.
 - **SITG attribution** ("Source : SITG – Système d'information du territoire à Genève") ends the details
   sheet: the SITG open-data terms make the source mandatory. Keep it.
 - **Mes périmètres:** without a subscription, the tab is the form: optional name (`ChoiceChip`s
@@ -592,7 +602,7 @@ assets/mapbox-logo.png (+ 2.0x/, 3.0x/)   the Mapbox logo, required on the map
   and Profile) and `Runner/RunnerRelease.entitlements` (`production`, Release), via `CODE_SIGN_ENTITLEMENTS`;
   `UIBackgroundModes` `remote-notification` in `Info.plist`.
 - **Release / TestFlight** (checklist and store texts: `docs/app-store.md`): version from `pubspec.yaml`
-  (`1.1.0+6`; bump the build number for every upload), iPhone only, `CFBundleDevelopmentRegion fr`,
+  (`1.1.0+7`; bump the build number for every upload), iPhone only, `CFBundleDevelopmentRegion fr`,
   `ITSAppUsesNonExemptEncryption NO`, `Runner/PrivacyInfo.xcprivacy` (precise location, other user content,
   device ID: app functionality, linked, no tracking; UserDefaults CA92.1). It must stay in line with the App
   Store privacy answers and `deploy/site/privacy.html`. No usage strings (no device location; iOS has

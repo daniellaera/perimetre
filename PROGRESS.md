@@ -175,3 +175,37 @@ Backend `c0f03147` (main), Flyway V8 -> V9. Pre-deploy dump taken and checked; M
 - Ship app build 1.0.0+4 to TestFlight when wanted (the app already tolerates old/new backends).
 - Rollback, if ever needed: `deploy/ship.sh <previous short sha>` (the previous image tag is `a9885824`'s
   revision in the registry); V9 tables are additive and stay.
+
+# Navigation fix: dossier details (2026-11-11, build 1.1.0+7)
+
+TestFlight 1.1.0 (6): the dossier details had no way back. Not uploaded: build 7 replaces it.
+
+## Audit (before the fix)
+
+| screen | way back before | missing |
+|--------|-----------------|---------|
+| Details sheet (`showDossierDetails`: from Explorer list/map, Récent feed, tapped push) | drag handle (only the handle area and over-scroll), scrim tap, Android back | **no visible control.** `useSafeArea` was off: a sheet taller than the screen (2-3 parcels, many buildings) ran under the status bar / Dynamic Island, so the handle and the scrim were unreachable; the scroll view swallowed drags. Opened on the shell's navigator, so it was also clipped above the bottom bar |
+| Parcel cards, Bâtiments / Zone et restrictions (`ExpansionTile`) | inline expand/collapse | tiles 40 pt (dense), EGRID row ~30 pt, registry button ~30 pt: under the 44 pt minimum |
+| "Voir au registre foncier" (SFSafariViewController) | native close (top left) and back/share bar | none (Apple's component); `closeInAppWebView()` verified to return to the details |
+| "Voir le dossier officiel" | opens Safari app (external) | none (iOS app switch) |
+| Subscription form page (`fullscreenDialog`) | AppBar close (X) | none |
+| Notification primer page | AppBar back arrow + "Continuer" | none |
+| Delete confirmation dialog | Annuler / Supprimer | none |
+| Explorer list sheet, tabs | persistent, bottom bar | none |
+
+## Changed (`app/`)
+- Details sheet: root navigator, `useSafeArea`, 92% height cap, pinned header with handle + "Détail du dossier" + **Fermer**;
+  bottom inset as scroll padding.
+- Parcel section: min 44-48 pt touch targets (EGRID row, expandable tiles, registry button).
+- Tests: `test/details_navigation_test.dart` (7 widget tests; 6 fail on the old sheet), `integration_test/navigation_test.dart`.
+- `pubspec.yaml` 1.1.0+7.
+
+## Verified (simulators, real taps, local backend, screenshot after each step in `app/build/nav-screenshots/`, git-ignored)
+Per device and brightness, dossiers with 1 parcel, 2 parcels, none, and the most buildings (16): list -> open details ->
+parcels -> sections expanded -> bottom -> close by Fermer / swipe / system back / scrim, each time back on the Explorer with
+its bottom bar. Devices: dev iPhone 17 Pro (`pro-*`), iPhone SE 3rd gen (`se-*`), iPhone 17 Pro Max (`max-*`), SE with
+Accessibility XL text (`se-xl-*`), light and dark. Registry sheet: opened and closed back to the details on the dev
+iPhone 17 Pro (not screenshotted while open, owner names).
+Not verified: Android (no SDK; back covered by the widget test via `handlePopRoute`); the Safari sheet's own close button
+by a tap (native, not drivable; seen present once on screen). Noted, not changed: at XL text on the SE the Explorer's list
+sheet shows no complete row (the test opens the details through `showDossierDetails` there).

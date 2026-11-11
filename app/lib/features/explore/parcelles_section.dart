@@ -132,8 +132,8 @@ class ParcelleCard extends StatelessWidget {
               InkWell(
                 onTap: () => _copyEgrid(context),
                 onLongPress: () => _copyEgrid(context),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 44),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -171,7 +171,11 @@ class ParcelleCard extends StatelessWidget {
             // What is not open data (owner, official extract) is on the State's website, opened in the app.
             TextButton.icon(
               onPressed: () => _open(context),
-              style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(44, 48),
+                alignment: Alignment.centerLeft,
+              ),
               icon: const Icon(Icons.account_balance_outlined, size: 18),
               label: const Text('Voir au registre foncier'),
             ),
@@ -202,7 +206,7 @@ class _Collapsible extends StatelessWidget {
       child: ExpansionTile(
         tilePadding: EdgeInsets.zero,
         childrenPadding: const EdgeInsets.only(bottom: 8),
-        dense: true,
+        minTileHeight: 48,
         shape: const Border(),
         collapsedShape: const Border(),
         expandedCrossAxisAlignment: CrossAxisAlignment.start,

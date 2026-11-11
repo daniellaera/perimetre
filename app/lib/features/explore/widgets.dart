@@ -431,12 +431,55 @@ class _SmallChip extends StatelessWidget {
 // Details sheet
 
 Future<void> showDossierDetails(BuildContext context, Dossier d) {
+  // useSafeArea: a tall sheet (several parcels, many buildings) must stop below the status bar / Dynamic Island,
+  // otherwise its top (handle, close button) sits under them and cannot be reached. The height cap keeps a strip
+  // of scrim visible above the sheet (a tap there closes it). The close button is pinned in the sheet's header.
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    showDragHandle: true,
+    // Root navigator: on the shell's own navigator the sheet is clipped above the bottom navigation bar.
+    useRootNavigator: true,
+    useSafeArea: true,
+    showDragHandle: false,
+    constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.92),
     builder: (context) => _DossierDetails(d),
   );
+}
+
+/// Pinned top of the details sheet: drag handle plus an always-visible "Fermer" button (never scrolls away).
+class _DetailsHeader extends StatelessWidget {
+  const _DetailsHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          margin: const EdgeInsets.only(top: 8),
+          width: 36,
+          height: 4,
+          decoration: BoxDecoration(color: scheme.outlineVariant, borderRadius: BorderRadius.circular(2)),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 8, 0),
+          child: Row(
+            children: [
+              Expanded(child: Text('Détail du dossier', style: Theme.of(context).textTheme.titleSmall)),
+              TextButton.icon(
+                onPressed: () => Navigator.of(context).maybePop(),
+                style: TextButton.styleFrom(minimumSize: const Size(44, 48)),
+                icon: const Icon(Icons.close),
+                label: const Text('Fermer'),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+      ],
+    );
+  }
 }
 
 class _DossierDetails extends StatelessWidget {
@@ -455,72 +498,83 @@ class _DossierDetails extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     // The generic "Demande" label says nothing: the description becomes the title instead.
     final descriptionIsTitle = d.operationLabel == defaultOperationLabel && d.description != null;
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(descriptionIsTitle ? d.description! : d.operationLabel, style: text.titleLarge),
-            const SizedBox(height: 4),
-            SelectableText(
-              d.idDossier,
-              style: text.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-            if (d.description != null && !descriptionIsTitle) ...[
-              const SizedBox(height: 12),
-              Text(d.description!, style: text.bodyLarge),
-            ],
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                CircleAvatar(radius: 6, backgroundColor: groupeColor(d.groupe)),
-                const SizedBox(width: 8),
-                Expanded(child: Text(d.groupe.longLabel, style: text.titleSmall)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _field(context, 'Type de dossier', '${d.typeDossierLabel} (${d.typeDossier})'),
-            if (d.operation != null) _field(context, 'Opération', d.operation!),
-            if (d.dateDepot != null) _field(context, 'Déposé le', formatDate(d.dateDepot!)),
-            _field(context, 'Mis à jour le', formatDate(d.dateMajSitg)),
-            _field(context, 'Distance', '${d.distanceM.round()} m'),
-            if (d.flags.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const _DetailsHeader(),
+        Flexible(
+          child: SafeArea(
+            top: false,
+            bottom: false,
+            child: SingleChildScrollView(
+              // The home indicator's inset is scroll padding, so content scrolls under it instead of being cut above it.
+              padding: EdgeInsets.fromLTRB(20, 4, 20, 16 + MediaQuery.paddingOf(context).bottom),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final f in d.flags)
-                    Chip(
-                      avatar: Icon(flagIcon(f), size: 18),
-                      label: Text(flagLabels[f] ?? f),
-                      visualDensity: VisualDensity.compact,
+                  Text(descriptionIsTitle ? d.description! : d.operationLabel, style: text.titleLarge),
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    d.idDossier,
+                    style: text.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                  if (d.description != null && !descriptionIsTitle) ...[
+                    const SizedBox(height: 12),
+                    Text(d.description!, style: text.bodyLarge),
+                  ],
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      CircleAvatar(radius: 6, backgroundColor: groupeColor(d.groupe)),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(d.groupe.longLabel, style: text.titleSmall)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _field(context, 'Type de dossier', '${d.typeDossierLabel} (${d.typeDossier})'),
+                  if (d.operation != null) _field(context, 'Opération', d.operation!),
+                  if (d.dateDepot != null) _field(context, 'Déposé le', formatDate(d.dateDepot!)),
+                  _field(context, 'Mis à jour le', formatDate(d.dateMajSitg)),
+                  _field(context, 'Distance', '${d.distanceM.round()} m'),
+                  if (d.flags.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        for (final f in d.flags)
+                          Chip(
+                            avatar: Icon(flagIcon(f), size: 18),
+                            label: Text(flagLabels[f] ?? f),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                      ],
                     ),
+                  ],
+                  if (d.parcelles.isNotEmpty) ParcellesSection(d.parcelles, fallbackUrl: d.lienRegistreFoncier),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: d.lienSad == null ? null : () => _openOfficial(context),
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('Voir le dossier officiel'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Required by the SITG open-data terms (source attribution).
+                  Text(
+                    'Source : SITG – Système d\'information du territoire à Genève',
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
                 ],
               ),
-            ],
-            if (d.parcelles.isNotEmpty) ParcellesSection(d.parcelles, fallbackUrl: d.lienRegistreFoncier),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: d.lienSad == null ? null : () => _openOfficial(context),
-                icon: const Icon(Icons.open_in_new),
-                label: const Text('Voir le dossier officiel'),
-              ),
             ),
-            const SizedBox(height: 12),
-            // Required by the SITG open-data terms (source attribution).
-            Text(
-              'Source : SITG – Système d\'information du territoire à Genève',
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
